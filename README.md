@@ -4,6 +4,18 @@
 
 > Submission for **Stellar Hacks: Real-World ZK**.
 
+## Deployed on Stellar Testnet
+
+The full system is live and the private round-trip is **verified on-chain**. Pool:
+[`CA7G45QPOS5RFTK7R5LWJSTPEGTPXDDD7FIQ3XFUN4U7FLG5WUSGXYSK`](https://stellar.expert/explorer/testnet/contract/CA7G45QPOS5RFTK7R5LWJSTPEGTPXDDD7FIQ3XFUN4U7FLG5WUSGXYSK)
+(wired to 5 UltraHonk verifiers). Proven end-to-end:
+
+- **Deposit** 1 XLM + note commitment → on-chain Merkle root equals the SDK-computed root, byte-for-byte ([tx](https://stellar.expert/explorer/testnet/tx/56cd056ce6790b05bc4ff11b34bcc77e195a2880f6c97a71034ddccb0615da97)).
+- **Withdraw** with a real Noir/UltraHonk proof verified inside the Soroban contract, releasing the funds ([tx](https://stellar.expert/explorer/testnet/tx/b74ab61d7dd9eaf6c527886f321f6f10c4097e72a6ef0a94865e2f3a14e5b9b7)).
+- **Soundness**: a tampered proof and a replayed nullifier are both rejected on-chain.
+
+Full contract IDs, transactions, and a one-command reproduction are in [DEPLOYMENT.md](./DEPLOYMENT.md).
+
 ## Modules
 
 | Module | Description |
