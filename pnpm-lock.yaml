@@ -75,6 +75,31 @@ importers:
         specifier: ^5.4.11
         version: 5.4.21(@types/node@20.19.43)
 
+  matcher:
+    dependencies:
+      '@wraith/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+    devDependencies:
+      '@stellar/stellar-sdk':
+        specifier: ^13.3.0
+        version: 13.3.0
+      '@types/node':
+        specifier: ^20.19.0
+        version: 20.19.43
+      '@zkpassport/poseidon2':
+        specifier: ^0.6.2
+        version: 0.6.2
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(jiti@1.21.7)(postcss@8.5.16)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@20.19.43)
+
   sdk:
     dependencies:
       '@aztec/bb.js':
