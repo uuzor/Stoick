@@ -19,6 +19,10 @@
     "verifyProofValid": "0e7c0dcaaef6be5f35e09d37960864b500c5046d97ad145b5611221fcdcaf8a0",
     "deposit": "56cd056ce6790b05bc4ff11b34bcc77e195a2880f6c97a71034ddccb0615da97",
     "withdraw": "6be9162fa0fc0d1b1fbce175eab97ed90ab3faca486a4f0adad7c7c1b10dda0d",
-    "rootAfterDeposit": "2a58187c17fc52453ebc0a093233af740aa8d47044b83e379aa8c101328d3026"
+    "transfer": "8b8eed61eabd219c9d766f496ec19fc333549868fca2308cf7e63e00b8add90f",
+    "matchOrders": "5bc05ebfa3f95849e6c6e3bff8375e6cfe09544e8c3318feb4096f81c7c4bdb3",
+    "cancelOrder": "51023894faf88329a2bd937c55ba05731860a5189aafe998e4964cf9881a4063",
+    "rootAfterDeposit": "2a58187c17fc52453ebc0a093233af740aa8d47044b83e379aa8c101328d3026",
+    "allFlowsVerifiedLive": true
   }
 }

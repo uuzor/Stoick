@@ -28,6 +28,14 @@ with all five verifier addresses.
 | on-chain root == SDK-computed root | **byte-identical** `2a58187c…` | — |
 | `withdraw` with a real ZK proof (1 XLM out) | **success**, verifier accepted on-chain; **asset/recipient bound** to the proof's `asset_id`/`recipient_hash` | [`6be9162f…`](https://stellar.expert/explorer/testnet/tx/6be9162fa0fc0d1b1fbce175eab97ed90ab3faca486a4f0adad7c7c1b10dda0d) |
 | `withdraw` replay (same proof) | **rejected** `NullifierUsed (#5)` | — (simulation fails) |
+| **`transfer`** (Pay) — 2-in/2-out shielded, value conserved (0.5 → 0.2 + 0.3, amounts hidden) | **success**, both input nullifiers spent, 2 output commitments inserted | [`8b8eed61…`](https://stellar.expert/explorer/testnet/tx/8b8eed61eabd219c9d766f496ec19fc333549868fca2308cf7e63e00b8add90f) |
+| **`place_order`** ×2 (Swap) — hidden orders, ZK-proven balance, funds locked | `OrderPlacedEvent` (commitment opaque) | (settled below) |
+| **`match_orders`** (Swap) — match at midpoint, buyer←base / seller←quote | **success**, fair match proven in-circuit | [`5bc05ebf…`](https://stellar.expert/explorer/testnet/tx/5bc05ebfa3f95849e6c6e3bff8375e6cfe09544e8c3318feb4096f81c7c4bdb3) |
+| **`cancel_order`** (Swap) — refund locked funds as a new note | `OrderCancelledEvent` | [`51023894…`](https://stellar.expert/explorer/testnet/tx/51023894faf88329a2bd937c55ba05731860a5189aafe998e4964cf9881a4063) |
+
+**All six flows are verified live on testnet** — bridge (deposit/withdraw), private payment (transfer),
+and the full dark-pool swap (place/match/cancel) — each gated by a real Noir/UltraHonk proof checked
+inside the Soroban contract.
 
 The deposit→withdraw pair is a complete private round-trip: 1 XLM enters the pool against an opaque
 commitment, and leaves only when a valid zero-knowledge proof of ownership (against the current
