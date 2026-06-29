@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply min-h-screen bg-ink-950 font-sans text-zinc-300;
+    background-image:
+      radial-gradient(55rem 38rem at 50% -12rem, rgba(124, 108, 255, 0.14), transparent 62%),
+      radial-gradient(40rem 30rem at 88% 4rem, rgba(124, 108, 255, 0.05), transparent 60%);
+    background-repeat: no-repeat;
+  }
+
+  ::selection {
+    @apply bg-spectral/30 text-white;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #2c2c39 transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-ink-600;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-ink-700/70 bg-ink-850/60 shadow-panel backdrop-blur-md;
+  }
+
+  .panel-title {
+    @apply text-sm font-semibold tracking-tight text-zinc-100;
+  }
+
+  .label {
+    @apply mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-ink-700 bg-ink-900/70 px-3.5 py-2.5 text-sm text-zinc-100
+           outline-none transition placeholder:text-zinc-600
+           focus:border-spectral/60 focus:ring-2 focus:ring-spectral/20;
+  }
+  .input-mono {
+    @apply font-mono tracking-tight;
+  }
+
+  .btn {
+    @apply inline-flex cursor-pointer select-none items-center justify-center gap-2 rounded-xl px-4 py-2.5
+           text-sm font-semibold transition active:scale-[0.99]
+           disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
+  }
+  .btn-sm {
+    @apply rounded-lg px-3 py-1.5 text-xs;
+  }
+  .btn-primary {
+    @apply bg-spectral text-white shadow-glow hover:bg-spectral-soft;
+  }
+  .btn-outline {
+    @apply border border-ink-600 bg-ink-800/50 text-zinc-200 hover:border-spectral/50 hover:text-white;
+  }
+  .btn-ghost {
+    @apply text-zinc-400 hover:bg-ink-800 hover:text-zinc-100;
+  }
+  .btn-danger {
+    @apply border border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium;
+  }
+}
