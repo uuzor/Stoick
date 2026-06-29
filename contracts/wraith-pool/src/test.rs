@@ -59,6 +59,22 @@ fn zero(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[0u8; 32])
 }
 
+/// Parse a 64-char (optionally `0x`-prefixed) hex string into a 32-byte array.
+fn hex32(s: &str) -> [u8; 32] {
+    let s = s.strip_prefix("0x").unwrap_or(s);
+    let b = s.as_bytes();
+    assert_eq!(b.len(), 64, "hex32 expects 64 hex chars");
+    let mut out = [0u8; 32];
+    let mut i = 0usize;
+    while i < 32 {
+        let hi = (b[i * 2] as char).to_digit(16).unwrap() as u8;
+        let lo = (b[i * 2 + 1] as char).to_digit(16).unwrap() as u8;
+        out[i] = (hi << 4) | lo;
+        i += 1;
+    }
+    out
+}
+
 fn proof(env: &Env) -> Bytes {
     Bytes::from_slice(env, &[0u8; PROOF_BYTES])
 }
@@ -76,6 +92,7 @@ struct Ctx {
     client: WraithPoolClient<'static>,
     pool: Address,
     asset: Address,
+    native: Address,
     user: Address,
 }
 
@@ -89,6 +106,9 @@ fn setup(ok: bool) -> Ctx {
     } else {
         env.register(MockVerifierFail, ())
     };
+    // Stand-in native-XLM SAC; distinct from `asset` so the two asset_id paths
+    // (native -> 0 vs. hash2(addr_field, 0)) are both exercised.
+    let native = Address::generate(&env);
     let pool = env.register(
         WraithPool,
         (
@@ -97,6 +117,7 @@ fn setup(ok: bool) -> Ctx {
             verifier.clone(),
             verifier.clone(),
             verifier.clone(),
+            native.clone(),
         ),
     );
     let client = WraithPoolClient::new(&env, &pool);
@@ -112,6 +133,7 @@ fn setup(ok: bool) -> Ctx {
         client,
         pool,
         asset,
+        native,
         user,
     }
 }
@@ -167,7 +189,14 @@ fn merkle_root_matches_reference() {
     let v = Address::generate(&env);
     let pool = env.register(
         WraithPool,
-        (v.clone(), v.clone(), v.clone(), v.clone(), v.clone()),
+        (
+            v.clone(),
+            v.clone(),
+            v.clone(),
+            v.clone(),
+            v.clone(),
+            v.clone(),
+        ),
     );
 
     let mut leaves: StdVec<[u8; 32]> = StdVec::new();
@@ -242,9 +271,11 @@ fn full_flow_deposit_order_match_withdraw() {
     let recipient = Address::generate(env);
     let root = c.get_last_root();
     let nf_w = f(env, 0x20);
+    let rh = c.recipient_hash_of(&recipient);
+    let aid = c.asset_id_of(&ctx.asset);
     c.withdraw(
         &proof(env),
-        &pub_inputs(env, &[root, nf_w.clone(), f(env, 0x99), f(env, 600), f(env, 1)]),
+        &pub_inputs(env, &[root, nf_w.clone(), rh, f(env, 600), aid]),
         &recipient,
         &600i128,
         &ctx.asset,
@@ -263,7 +294,16 @@ fn withdraw_double_spend_rejected() {
     let root = c.get_last_root();
     let recipient = Address::generate(env);
     let nf = f(env, 0x42);
-    let pi = pub_inputs(env, &[root, nf, f(env, 0x99), f(env, 100), f(env, 1)]);
+    let pi = pub_inputs(
+        env,
+        &[
+            root,
+            nf,
+            c.recipient_hash_of(&recipient),
+            f(env, 100),
+            c.asset_id_of(&ctx.asset),
+        ],
+    );
 
     c.withdraw(&proof(env), &pi, &recipient, &100i128, &ctx.asset);
     assert_eq!(
@@ -311,7 +351,18 @@ fn withdraw_verification_failure_rejected() {
     c.deposit(&ctx.user, &ctx.asset, &1_000i128, &f(env, 0xC0));
     let root = c.get_last_root();
     let recipient = Address::generate(env);
-    let pi = pub_inputs(env, &[root, f(env, 1), f(env, 0x99), f(env, 100), f(env, 1)]);
+    // Correct recipient_hash / asset_id so the call clears the binding checks and
+    // fails specifically at proof verification.
+    let pi = pub_inputs(
+        env,
+        &[
+            root,
+            f(env, 1),
+            c.recipient_hash_of(&recipient),
+            f(env, 100),
+            c.asset_id_of(&ctx.asset),
+        ],
+    );
     assert_eq!(
         c.try_withdraw(&proof(env), &pi, &recipient, &100i128, &ctx.asset),
         Err(Ok(WraithError::VerificationFailed))
@@ -414,6 +465,134 @@ fn place_order_unknown_root_rejected() {
     assert_eq!(
         c.try_place_order(&proof(env), &pi),
         Err(Ok(WraithError::UnknownRoot))
+    );
+}
+
+/// Cross-implementation golden test: the on-chain `address_to_field` /
+/// `asset_id_of` / `recipient_hash_of` must equal the SDK's `addressToField` /
+/// `assetIdFromAddress` / `recipientHash` (sdk/src/stellar.ts) for the SAME StrKey
+/// addresses. The golden constants below were generated from `sdk/dist` via:
+///
+///   node -e "import('./sdk/dist/index.js').then(m => {
+///     const a = 'C...'|'G...';
+///     console.log(m.fieldToHex(m.addressToField(a)),
+///                 m.fieldToHex(m.assetIdFromAddress(a)),
+///                 m.fieldToHex(m.recipientHash(a)));
+///   })"
+///
+/// If the on-chain XDR extraction, big-endian interpretation, or mod-r reduction ever
+/// diverges from the SDK, this assertion fails — so the binding cannot silently be
+/// against the wrong field.
+#[test]
+fn address_to_field_matches_sdk_golden() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+    let v = Address::generate(&env);
+    let pool = env.register(
+        WraithPool,
+        (
+            v.clone(),
+            v.clone(),
+            v.clone(),
+            v.clone(),
+            v.clone(),
+            v.clone(),
+        ),
+    );
+    let c = WraithPoolClient::new(&env, &pool);
+
+    // Contract address whose raw id = 32 × 0x22 (< r ⇒ reduction is a no-op).
+    let cid = Address::from_str(&env, "CARCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEVQO");
+    assert_eq!(
+        c.address_to_field(&cid),
+        BytesN::from_array(
+            &env,
+            &hex32("2222222222222222222222222222222222222222222222222222222222222222")
+        )
+    );
+    let cid_id = BytesN::from_array(
+        &env,
+        &hex32("303fd488009b794a65badcb57f5b44cb6729b056bc1bd9bb9ebe50a36b0ae44d"),
+    );
+    assert_eq!(c.asset_id_of(&cid), cid_id);
+    assert_eq!(c.recipient_hash_of(&cid), cid_id);
+
+    // Account address whose raw ed25519 pubkey exceeds r ⇒ exercises the mod-r path.
+    let acc = Address::from_str(&env, "GDIEVMRSOQV3JKZ2CNUL2RQV4TTNAISKW4NAC25PQUQKGMWJO6DTOAE7");
+    assert_eq!(
+        c.address_to_field(&acc),
+        BytesN::from_array(
+            &env,
+            &hex32("0eb97866ef65340458d251e3401083722f52a995331ba96a7598cce309778733")
+        )
+    );
+    let acc_id = BytesN::from_array(
+        &env,
+        &hex32("21f8e0d055c2cd25ec77811fa4c87c29e79a20a9645712a69e1f7be7c920d5df"),
+    );
+    assert_eq!(c.asset_id_of(&acc), acc_id);
+    assert_eq!(c.recipient_hash_of(&acc), acc_id);
+}
+
+#[test]
+fn native_asset_id_is_zero() {
+    let ctx = setup(true);
+    let env = &ctx.env;
+    let c = &ctx.client;
+    // The configured native-XLM SAC maps to the canonical native asset_id 0 (SHARED §4)…
+    assert_eq!(c.asset_id_of(&ctx.native), zero(env));
+    // …whereas any other SAC derives a non-zero asset_id.
+    assert_ne!(c.asset_id_of(&ctx.asset), zero(env));
+}
+
+#[test]
+fn withdraw_asset_mismatch_rejected() {
+    let ctx = setup(true);
+    let env = &ctx.env;
+    let c = &ctx.client;
+    c.deposit(&ctx.user, &ctx.asset, &1_000i128, &f(env, 0xC0));
+    let root = c.get_last_root();
+    let recipient = Address::generate(env);
+    // recipient_hash binds, but the public asset_id (here: 0/native) does not match the
+    // SAC `asset` actually being drawn — the core soundness gap this fix closes.
+    let pi = pub_inputs(
+        env,
+        &[
+            root,
+            f(env, 1),
+            c.recipient_hash_of(&recipient),
+            f(env, 100),
+            zero(env),
+        ],
+    );
+    assert_eq!(
+        c.try_withdraw(&proof(env), &pi, &recipient, &100i128, &ctx.asset),
+        Err(Ok(WraithError::AssetMismatch))
+    );
+}
+
+#[test]
+fn withdraw_recipient_mismatch_rejected() {
+    let ctx = setup(true);
+    let env = &ctx.env;
+    let c = &ctx.client;
+    c.deposit(&ctx.user, &ctx.asset, &1_000i128, &f(env, 0xC0));
+    let root = c.get_last_root();
+    let recipient = Address::generate(env);
+    // asset_id binds, but the public recipient_hash does not derive from `recipient`.
+    let pi = pub_inputs(
+        env,
+        &[
+            root,
+            f(env, 1),
+            f(env, 0x99),
+            f(env, 100),
+            c.asset_id_of(&ctx.asset),
+        ],
+    );
+    assert_eq!(
+        c.try_withdraw(&proof(env), &pi, &recipient, &100i128, &ctx.asset),
+        Err(Ok(WraithError::RecipientMismatch))
     );
 }
 

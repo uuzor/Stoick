@@ -24,16 +24,20 @@ for c in withdraw transfer place_order match_orders cancel_order; do
   echo "    ${VF[$c]}"
 done
 
+# Native-XLM SAC address — the pool maps it to the canonical native asset_id 0
+# (SHARED §4) when binding `withdraw`'s `asset` arg to the proof's public `asset_id`.
+NATIVE=$(stellar contract id asset --asset native --network "$NET")
+
 echo "==> Deploying wraith-pool"
 POOL=$(stellar contract deploy --wasm "$POOL_WASM" --source "$IDENT" --network "$NET" -- \
-  --transfer_vf "${VF[transfer]}" \
-  --order_vf    "${VF[place_order]}" \
-  --match_vf    "${VF[match_orders]}" \
-  --withdraw_vf "${VF[withdraw]}" \
-  --cancel_vf   "${VF[cancel_order]}" | tail -1)
+  --transfer_vf  "${VF[transfer]}" \
+  --order_vf     "${VF[place_order]}" \
+  --match_vf     "${VF[match_orders]}" \
+  --withdraw_vf  "${VF[withdraw]}" \
+  --cancel_vf    "${VF[cancel_order]}" \
+  --native_asset "$NATIVE" | tail -1)
 echo "    POOL=$POOL"
 
-NATIVE=$(stellar contract id asset --asset native --network "$NET")
 cat > deployments.json <<JSON
 {
   "network": "$NET",

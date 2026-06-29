@@ -8,6 +8,9 @@ pub enum DataKey {
     MatchVf,
     WithdrawVf,
     CancelVf,
+    /// The native-XLM SAC address. Its canonical `asset_id` is `0` (SHARED §4),
+    /// so `withdraw` recognises it specially when binding `asset` to the proof.
+    NativeAsset,
     NextIndex,
     Roots,
     Frontier(u32),
@@ -30,6 +33,10 @@ pub enum WraithError {
     TreeFull = 9,
     InvalidAmount = 10,
     AmountMismatch = 11,
+    /// The SAC `asset` Address does not derive the proof's public `asset_id`.
+    AssetMismatch = 12,
+    /// The `recipient` Address does not derive the proof's public `recipient_hash`.
+    RecipientMismatch = 13,
 }
 
 #[contractevent(topics = ["deposit"], data_format = "map")]
