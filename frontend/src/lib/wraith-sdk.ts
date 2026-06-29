@@ -8,6 +8,7 @@
 // `MockWraithSdk`. No UI code imports anything else from the SDK layer.
 
 import { formatAmount, parseAmount } from './format'
+import { RealWraithSdk } from './real-sdk'
 
 export type AssetCode = 'XLM' | 'USDC'
 export type OrderSide = 'buy' | 'sell'
@@ -233,10 +234,16 @@ class MockWraithSdk implements WraithSdk {
 let singleton: WraithSdk | null = null
 
 /**
- * Returns the app-wide Wraith client. Swap the body to return the real
- * `@wraith/sdk` client to go live — nothing else in the UI changes.
+ * Returns the app-wide Wraith client.
+ *
+ * By default this is the LIVE `RealWraithSdk`, wired to the deployed WraithPool on
+ * Stellar Testnet (real deposit + portfolio; experimental withdraw). Set
+ * `VITE_USE_MOCK=true` to fall back to the offline `MockWraithSdk` for UI dev with no
+ * wallet / network. Nothing else in the UI changes between the two.
  */
 export function createWraithSdk(): WraithSdk {
-  if (!singleton) singleton = new MockWraithSdk()
+  if (!singleton) {
+    singleton = import.meta.env.VITE_USE_MOCK === 'true' ? new MockWraithSdk() : new RealWraithSdk()
+  }
   return singleton
 }
