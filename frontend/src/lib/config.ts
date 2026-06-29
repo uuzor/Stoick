@@ -7,7 +7,7 @@
  * networks / private deployments.
  *
  * deployments.json (testnet):
- *   pool        CA7G45QPOS5RFTK7R5LWJSTPEGTPXDDD7FIQ3XFUN4U7FLG5WUSGXYSK
+ *   pool        CD7EF4GG32IPVS2PGD2LMXEO3TPEWBZRUCBBSPXQ236CD6TMF5S4UUZR
  *   native SAC  CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
  *   passphrase  "Test SDF Network ; September 2015"
  */
@@ -27,7 +27,7 @@ function flag(key: string): boolean {
 /** WraithPool contract id on the configured network. */
 export const POOL_CONTRACT_ID = env(
   'VITE_WRAITH_POOL',
-  'CA7G45QPOS5RFTK7R5LWJSTPEGTPXDDD7FIQ3XFUN4U7FLG5WUSGXYSK',
+  'CD7EF4GG32IPVS2PGD2LMXEO3TPEWBZRUCBBSPXQ236CD6TMF5S4UUZR',
 )
 
 /** Native (XLM) Stellar Asset Contract address. */

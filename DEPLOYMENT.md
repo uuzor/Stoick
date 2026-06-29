@@ -7,7 +7,7 @@ below is backed by a testnet transaction you can open on stellar.expert.
 
 | Contract | ID |
 |----------|----|
-| **Wraith Pool** | [`CA7G45QPOS5RFTK7R5LWJSTPEGTPXDDD7FIQ3XFUN4U7FLG5WUSGXYSK`](https://stellar.expert/explorer/testnet/contract/CA7G45QPOS5RFTK7R5LWJSTPEGTPXDDD7FIQ3XFUN4U7FLG5WUSGXYSK) |
+| **Wraith Pool** | [`CD7EF4GG32IPVS2PGD2LMXEO3TPEWBZRUCBBSPXQ236CD6TMF5S4UUZR`](https://stellar.expert/explorer/testnet/contract/CD7EF4GG32IPVS2PGD2LMXEO3TPEWBZRUCBBSPXQ236CD6TMF5S4UUZR) |
 | Verifier · withdraw | `CBKB3P72CTZAGODIKMQRLUJ2INHQULK5J66N6QQR7GCHGDUFCTUPJ6M3` |
 | Verifier · transfer | `CBXOZGAWSLJEXVMHY6WMBDLAJWDESUPOJV2TEAK6F77IYD7EVRDINS6I` |
 | Verifier · place_order | `CDOEXIJR3OE7527IBTBGYX62TNWBIOHMR7IBMWBMBBR6QA4TIXZSBXEE` |
@@ -26,7 +26,7 @@ with all five verifier addresses.
 | `verify_proof` with a **tampered** proof | **rejected** (`Crypto, InvalidInput` — bn254 point not on curve) | — (simulation fails) |
 | `deposit` 1 XLM + note commitment | **success**, leaf index 0 | [`56cd056c…`](https://stellar.expert/explorer/testnet/tx/56cd056ce6790b05bc4ff11b34bcc77e195a2880f6c97a71034ddccb0615da97) |
 | on-chain root == SDK-computed root | **byte-identical** `2a58187c…` | — |
-| `withdraw` with a real ZK proof (1 XLM out) | **success**, verifier accepted on-chain | [`b74ab61d…`](https://stellar.expert/explorer/testnet/tx/b74ab61d7dd9eaf6c527886f321f6f10c4097e72a6ef0a94865e2f3a14e5b9b7) |
+| `withdraw` with a real ZK proof (1 XLM out) | **success**, verifier accepted on-chain; **asset/recipient bound** to the proof's `asset_id`/`recipient_hash` | [`6be9162f…`](https://stellar.expert/explorer/testnet/tx/6be9162fa0fc0d1b1fbce175eab97ed90ab3faca486a4f0adad7c7c1b10dda0d) |
 | `withdraw` replay (same proof) | **rejected** `NullifierUsed (#5)` | — (simulation fails) |
 
 The deposit→withdraw pair is a complete private round-trip: 1 XLM enters the pool against an opaque
@@ -52,12 +52,17 @@ source ./env.sh
 The demo note used above is deterministic (`spending_key=12345`, `blinding=67890`, `amount=1 XLM`,
 `asset_id=0`), so the commitment `0f09047227…` and nullifier `02e885ea…` are reproducible.
 
+## Soundness: asset/recipient binding (closed)
+
+`withdraw` binds the SAC `asset` and `recipient` Address to the proof's public `asset_id` and
+`recipient_hash` via a canonical on-chain `Address→Field` encoding that matches the SDK's
+`addressToField` **byte-for-byte** (pinned by the `address_to_field_matches_sdk_golden` cross-impl
+test). A proof for one asset/recipient cannot be redirected to another (`AssetMismatch` /
+`RecipientMismatch`). The deployed pool above is the binding-enforced build.
+
 ## Known limitations (honest WIP)
 
-- **Asset/recipient binding** (`withdraw`): the contract binds the proven `amount` but not yet the
-  SAC `asset`/`recipient` Address to the proof's `asset_id`/`recipient_hash`. The canonical on-chain
-  `Address→Field` encoding (matching the SDK's `addressToField`) is the remaining hardening step —
-  tracked, low impact for the single-asset demo. The amount-binding + nullifier still prevent
-  withdrawing more than was proven.
 - Single-asset demo (native XLM). Multi-asset works by the same path with each asset's SAC.
-- The matching service and the live-wired frontend are tracked separately.
+- `transfer` / order flows: circuits + contract paths exist and unit-tested; the live-wired frontend
+  ships deposit + portfolio first, with withdraw experimental (in-browser proving) and
+  transfer/swap on the mock SDK. The matching service is tracked separately.
