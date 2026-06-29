@@ -1,0 +1,24 @@
+{
+  "network": "testnet",
+  "networkPassphrase": "Test SDF Network ; September 2015",
+  "deployer": "GAGEXK4SPRFYJMR3HXYXMCDBEWBFO4BHJP4XWO3L43HJU366UWPY4MKX",
+  "deployedAt": "2026-06-29",
+  "toolchain": { "nargo": "1.0.0-beta.9", "bb": "0.87.0", "soroban-sdk": "26.0.1", "stellar-cli": "27.0.0" },
+  "contracts": {
+    "wraithPool": "CA7G45QPOS5RFTK7R5LWJSTPEGTPXDDD7FIQ3XFUN4U7FLG5WUSGXYSK",
+    "verifiers": {
+      "withdraw": "CBKB3P72CTZAGODIKMQRLUJ2INHQULK5J66N6QQR7GCHGDUFCTUPJ6M3",
+      "transfer": "CBXOZGAWSLJEXVMHY6WMBDLAJWDESUPOJV2TEAK6F77IYD7EVRDINS6I",
+      "place_order": "CDOEXIJR3OE7527IBTBGYX62TNWBIOHMR7IBMWBMBBR6QA4TIXZSBXEE",
+      "match_orders": "CB5HNMW6IIMLQPSAKAC3ADTDHEOTKX6EHYCXNK5EITTFMO33BMD2EKM4",
+      "cancel_order": "CAI6B5ZTWOGJIBLNMOG67H3MAPSORU64ZEXBB7YYQ6TQ5RQJMSQQSA3B"
+    },
+    "assets": { "native": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC" }
+  },
+  "e2e": {
+    "verifyProofValid": "0e7c0dcaaef6be5f35e09d37960864b500c5046d97ad145b5611221fcdcaf8a0",
+    "deposit": "56cd056ce6790b05bc4ff11b34bcc77e195a2880f6c97a71034ddccb0615da97",
+    "withdraw": "b74ab61d7dd9eaf6c527886f321f6f10c4097e72a6ef0a94865e2f3a14e5b9b7",
+    "rootAfterDeposit": "2a58187c17fc52453ebc0a093233af740aa8d47044b83e379aa8c101328d3026"
+  }
+}
