@@ -5,6 +5,8 @@ circuits/noir/*/Verifier.toml
 
 # Rust / Soroban
 contracts/*/target/
+contracts/target/
+contracts/*/test_snapshots/
 *.wasm
 *.d
 
