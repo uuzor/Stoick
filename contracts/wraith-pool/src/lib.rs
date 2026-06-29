@@ -6,9 +6,10 @@ mod types;
 #[cfg(test)]
 mod test;
 
+use soroban_poseidon::Field;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, token, Address, Bytes, BytesN, Env, IntoVal,
-    InvokeError, MuxedAddress, Symbol, Val, Vec,
+    contract, contractimpl, crypto::BnScalar, panic_with_error, token, xdr::ToXdr, Address, Bytes,
+    BytesN, Env, IntoVal, InvokeError, MuxedAddress, Symbol, Val, Vec, U256,
 };
 
 use crate::types::{
@@ -31,6 +32,7 @@ impl WraithPool {
         match_vf: Address,
         withdraw_vf: Address,
         cancel_vf: Address,
+        native_asset: Address,
     ) {
         let s = env.storage().instance();
         s.set(&DataKey::TransferVf, &transfer_vf);
@@ -38,6 +40,9 @@ impl WraithPool {
         s.set(&DataKey::MatchVf, &match_vf);
         s.set(&DataKey::WithdrawVf, &withdraw_vf);
         s.set(&DataKey::CancelVf, &cancel_vf);
+        // The native-XLM SAC. Its canonical `asset_id` is `0` (SHARED §4), so
+        // `withdraw` maps it to `0` instead of `hash2(addr_field, 0)`.
+        s.set(&DataKey::NativeAsset, &native_asset);
     }
 
     /// Bridge: deposit a classic Stellar asset into Wraith. The amount is public;
@@ -84,7 +89,9 @@ impl WraithPool {
         let f = parse_fields(&env, &public_inputs, 5)?;
         let root = f.get(0).unwrap();
         let nullifier = f.get(1).unwrap();
+        let pub_recipient_hash = f.get(2).unwrap();
         let pub_amount = f.get(3).unwrap();
+        let pub_asset_id = f.get(4).unwrap();
 
         if !merkle::is_known_root(&env, &root) {
             return Err(WraithError::UnknownRoot);
@@ -99,6 +106,15 @@ impl WraithPool {
         // so a valid proof cannot be replayed against a different transfer amount.
         if pub_amount.to_array() != amount_to_field(amount) {
             return Err(WraithError::AmountMismatch);
+        }
+        // Bind the recipient/asset Addresses to the values the ZK proof commits to.
+        // Without this a valid proof for one asset could draw a different pool-held
+        // asset, or be redirected to a different recipient (SHARED §4/§7).
+        if recipient_hash_of(&env, &recipient) != pub_recipient_hash {
+            return Err(WraithError::RecipientMismatch);
+        }
+        if asset_id_of(&env, &asset) != pub_asset_id {
+            return Err(WraithError::AssetMismatch);
         }
         verify(&env, DataKey::WithdrawVf, &public_inputs, &proof)?;
 
@@ -291,6 +307,25 @@ impl WraithPool {
     pub fn is_active_order(env: Env, commitment: BytesN<32>) -> bool {
         order_active(&env, &commitment)
     }
+
+    /// Canonical `Address -> Field` used to bind on-chain SAC/recipient Addresses to
+    /// the field elements the ZK circuit commits to. Mirrors the SDK's `addressToField`
+    /// byte-for-byte: take the raw 32-byte key (ed25519 pubkey for `G…`, contract-id
+    /// hash for `C…`) interpreted big-endian and reduced mod the BN254 scalar modulus.
+    pub fn address_to_field(env: Env, address: Address) -> BytesN<32> {
+        address_to_field(&env, &address)
+    }
+
+    /// `asset_id` for a SAC `asset`: `0` for the configured native-XLM SAC, else
+    /// `hash2(address_to_field(asset), 0)` (SHARED §4).
+    pub fn asset_id_of(env: Env, asset: Address) -> BytesN<32> {
+        asset_id_of(&env, &asset)
+    }
+
+    /// `recipient_hash = hash2(address_to_field(recipient), 0)` (SHARED §7).
+    pub fn recipient_hash_of(env: Env, recipient: Address) -> BytesN<32> {
+        recipient_hash_of(&env, &recipient)
+    }
 }
 
 /// Cross-contract call to the per-circuit UltraHonk verifier. Public inputs FIRST,
@@ -344,6 +379,52 @@ fn amount_to_field(amount: i128) -> [u8; 32] {
     let mut out = [0u8; 32];
     out[16..32].copy_from_slice(&amount.to_be_bytes());
     out
+}
+
+/// Canonical `Address -> Field`, byte-identical to the SDK's `addressToField`
+/// (`sdk/src/stellar.ts`): the raw 32-byte key of the address — the ed25519 public key
+/// for `G…` accounts, the contract-id hash for `C…` contracts — interpreted big-endian
+/// and reduced mod the BN254 scalar modulus `r`.
+///
+/// The raw 32 bytes are recovered from the address' XDR: `Address` serializes to
+/// `ScVal::Address(ScAddress)`, whose account (`…Account/PublicKey/Ed25519`) and
+/// contract (`…Contract/Hash`) encodings both END with the 32-byte key, so the trailing
+/// 32 bytes of `to_xdr` are exactly the key the SDK obtains via `StrKey.decode*`.
+fn address_to_field(env: &Env, address: &Address) -> BytesN<32> {
+    let xdr = address.clone().to_xdr(env);
+    let len = xdr.len();
+    let mut raw = [0u8; 32];
+    xdr.slice(len - 32..len).copy_into_slice(&mut raw);
+
+    let modulus = <BnScalar as Field>::modulus(env);
+    let reduced = U256::from_be_bytes(env, &Bytes::from_array(env, &raw)).rem_euclid(&modulus);
+    let mut out = [0u8; 32];
+    reduced.to_be_bytes().copy_into_slice(&mut out);
+    BytesN::from_array(env, &out)
+}
+
+fn zero_field(env: &Env) -> BytesN<32> {
+    BytesN::from_array(env, &[0u8; 32])
+}
+
+/// `recipient_hash = hash2(address_to_field(recipient), 0)` (SHARED §7).
+fn recipient_hash_of(env: &Env, recipient: &Address) -> BytesN<32> {
+    merkle::poseidon2_hash2(env, &address_to_field(env, recipient), &zero_field(env))
+}
+
+/// `asset_id` for a SAC `asset`: the native-XLM SAC maps to the canonical native
+/// `asset_id = 0` (SHARED §4); every other SAC maps to `hash2(address_to_field(asset), 0)`.
+fn asset_id_of(env: &Env, asset: &Address) -> BytesN<32> {
+    if let Some(native) = env
+        .storage()
+        .instance()
+        .get::<DataKey, Address>(&DataKey::NativeAsset)
+    {
+        if &native == asset {
+            return zero_field(env);
+        }
+    }
+    merkle::poseidon2_hash2(env, &address_to_field(env, asset), &zero_field(env))
 }
 
 fn is_zero(b: &BytesN<32>) -> bool {

@@ -6,11 +6,12 @@
  * concatenation of 32-byte big-endian field elements in the circuit's declared `pub`
  * order (SHARED sec 6-7).
  *
- * NOTE (pending integration): the address->field convention used by
- * {@link addressToField} (StrKey raw 32 bytes interpreted big-endian, reduced mod r)
- * must match whatever the deployed contract uses to derive `asset_id` /
- * `recipient_hash`. This is the one mapping that cannot be verified until the contract
- * branch lands; everything else here is byte-exact per SHARED.
+ * The address->field convention used by {@link addressToField} (StrKey raw 32 bytes
+ * interpreted big-endian, reduced mod r) is the canonical `address_as_field` rule of
+ * SHARED §4. The deployed contract derives `asset_id` / `recipient_hash` identically
+ * (`contracts/wraith-pool/src/lib.rs::address_to_field`), pinned by the cross-impl golden
+ * test `address_to_field_matches_sdk_golden`. Native XLM keeps `asset_id = 0` (see
+ * {@link assetIdFromAddress}); the contract maps the configured native SAC Address to 0.
  */
 import {
   Account,

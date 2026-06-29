@@ -102,6 +102,43 @@ order_commitment = hash7(side, price, amount, asset_base, asset_quote, owner_key
 ```
 Field order in `hash7` is fixed as listed.
 
+### Address → Field (canonical, authoritative)
+
+`asset_id` and `recipient_hash` bind on-chain Stellar Addresses to circuit field elements.
+All three components MUST derive the field from an Address identically:
+
+```
+address_as_field(addr) =
+    be(raw32(addr))  mod  r
+```
+
+- `raw32(addr)` = the address' **raw 32-byte key**: the ed25519 public key for `G…`
+  account addresses, the contract-id hash for `C…` contract addresses (SACs).
+- `be(·)` interprets those 32 bytes as a **big-endian** integer.
+- reduced **mod `r`** (the BN254 scalar modulus, §2) to land in `[0, r)`.
+
+Implementations:
+- **SDK** (`sdk/src/stellar.ts`, `addressToField`): `StrKey.decode{Contract,Ed25519PublicKey}` →
+  `bytesToField` (big-endian) → `mod r`.
+- **Contract** (`contracts/wraith-pool/src/lib.rs`, `address_to_field`): `Address::to_xdr` →
+  trailing 32 bytes of the `ScVal::Address` XDR (both the `…Account/PublicKey/Ed25519` and
+  `…Contract/Hash` encodings end with the 32-byte key) → `U256::from_be_bytes(..).rem_euclid(r)`.
+  Pinned by the cross-impl golden test `address_to_field_matches_sdk_golden` in
+  `src/test.rs` (asserts the contract output equals SDK-generated golden constants for a
+  known `C…` and a known `G…` address).
+
+Then:
+```
+asset_id(asset)         = hash2(address_as_field(asset), 0)     // SAC asset_id
+                          = 0  for native XLM
+recipient_hash(recip)   = hash2(address_as_field(recip), 0)
+```
+
+**Native XLM special case:** the native asset's canonical `asset_id` is **`0`**, not
+`hash2(address_as_field(native_sac), 0)`. Off-chain the SDK returns `0` directly; on-chain
+the pool is constructed with the native SAC address and maps that one Address to `0`. Every
+other SAC uses the `hash2(…)` form.
+
 ### Constants
 ```
 PRICE_SCALE = 10_000_000        (10^7)
@@ -180,9 +217,18 @@ calling the verifier. Declared orders (authoritative):
 | `match_orders` | `order_commitment_a, order_commitment_b, fill_note_buyer, fill_note_seller, residual_order_a, residual_order_b, refund_note_a, refund_note_b` |
 | `cancel_order` | `order_commitment, refund_commitment, refund_asset_id` |
 
-`recipient_hash = hash2(recipient_address_as_field, 0)`. `ext_data_hash` binds transfer external
-params (see SPEC §6). `amount`/`asset_id` in `withdraw` are public so the contract can drive the SAC
-transfer.
+`recipient_hash = hash2(recipient_address_as_field, 0)` and `asset_id = hash2(asset_address_as_field, 0)`
+(native XLM `asset_id = 0`), both using the canonical `address_as_field` rule in §4. `ext_data_hash`
+binds transfer external params (see SPEC §6). `amount`/`asset_id`/`recipient_hash` in `withdraw` are
+public so the contract can drive the SAC transfer.
+
+**Binding (contract):** `withdraw` MUST reject unless `asset_id_of(asset) == asset_id` (public) and
+`recipient_hash_of(recipient) == recipient_hash` (public) — errors `AssetMismatch` (12) /
+`RecipientMismatch` (13). Without this a valid proof for one asset could draw a different pool-held
+asset, or be redirected to another recipient. `place_order`/`cancel_order`/`match_orders` carry
+`asset_id`s as public inputs but move no SAC funds and take no asset Address argument, so there is no
+Address to bind there; `deposit` has no proof, so its `asset` cannot be bound to the note (the
+note's `asset_id` is committed off-chain inside the opaque `commitment`).
 
 ---
 
