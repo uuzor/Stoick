@@ -11,6 +11,13 @@ pub enum DataKey {
     /// The native-XLM SAC address. Its canonical `asset_id` is `0` (SHARED §4),
     /// so `withdraw` recognises it specially when binding `asset` to the proof.
     NativeAsset,
+    /// Governance admin. Reused from the binding work if already established;
+    /// otherwise set on the first `set_bridge` call. Only this admin may
+    /// (re)configure the bridge address.
+    Admin,
+    /// The `WraithBridge` contract address authorised to call `bridge_mint`
+    /// (BRIDGE_SPEC §3/§7). Set once via `set_bridge` after the bridge deploys.
+    Bridge,
     NextIndex,
     Roots,
     Frontier(u32),
@@ -37,6 +44,12 @@ pub enum WraithError {
     AssetMismatch = 12,
     /// The `recipient` Address does not derive the proof's public `recipient_hash`.
     RecipientMismatch = 13,
+    /// `set_bridge` was called by an address other than the established admin.
+    Unauthorized = 14,
+    /// `bridge_mint` was called but no bridge address has been configured yet.
+    BridgeNotSet = 15,
+    /// `set_bridge` was called after the bridge was already configured (one-time).
+    BridgeAlreadySet = 16,
 }
 
 #[contractevent(topics = ["deposit"], data_format = "map")]
@@ -46,6 +59,13 @@ pub struct DepositEvent {
     pub commitment: BytesN<32>,
     pub asset: Address,
     pub amount: i128,
+}
+
+#[contractevent(topics = ["bridge_mint"], data_format = "map")]
+pub struct BridgeMintEvent {
+    #[topic]
+    pub index: u32,
+    pub commitment: BytesN<32>,
 }
 
 #[contractevent(topics = ["withdraw"], data_format = "map")]

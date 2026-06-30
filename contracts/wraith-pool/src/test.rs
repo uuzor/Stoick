@@ -7,13 +7,13 @@ use soroban_poseidon::{poseidon2_hash, Field};
 use soroban_sdk::{
     contract, contracterror, contractimpl,
     crypto::BnScalar,
-    testutils::Address as _,
+    testutils::{Address as _, Events as _, MockAuth, MockAuthInvoke},
     token::{StellarAssetClient, TokenClient},
-    Address, Bytes, BytesN, Env, Vec as SorobanVec, U256,
+    Address, Bytes, BytesN, Env, IntoVal, Symbol, Vec as SorobanVec, U256,
 };
 
 use crate::merkle::TREE_DEPTH;
-use crate::types::WraithError;
+use crate::types::{DataKey, WraithError};
 use crate::{WraithPool, WraithPoolClient};
 
 const PROOF_BYTES: usize = 456 * 32;
@@ -607,4 +607,153 @@ fn rejects_malformed_public_inputs_length() {
         c.try_withdraw(&proof(env), &short, &recipient, &1i128, &ctx.asset),
         Err(Ok(WraithError::InvalidPublicInputs))
     );
+}
+
+// --- Bridge: set_bridge + bridge_mint (BRIDGE_SPEC §3/§7) ---
+
+/// A pool registered with a single stand-in verifier address, plus a fresh
+/// `admin` and `bridge`. Auth is left under the caller's control so each test can
+/// assert the admin/bridge gating precisely.
+fn bridge_setup() -> (Env, WraithPoolClient<'static>, Address, Address, Address) {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+    let v = Address::generate(&env);
+    let pool = env.register(
+        WraithPool,
+        (
+            v.clone(),
+            v.clone(),
+            v.clone(),
+            v.clone(),
+            v.clone(),
+            v.clone(),
+        ),
+    );
+    let c = WraithPoolClient::new(&env, &pool);
+    let admin = Address::generate(&env);
+    let bridge = Address::generate(&env);
+    (env, c, pool, admin, bridge)
+}
+
+#[test]
+fn set_bridge_admin_gated_and_only_once() {
+    let (env, c, _pool, admin, bridge) = bridge_setup();
+
+    // Admin gating: without the admin's authorisation the call is rejected.
+    assert!(c.try_set_bridge(&admin, &bridge).is_err());
+
+    // With the admin's authorisation it succeeds and records the bridge address.
+    env.mock_all_auths();
+    c.set_bridge(&admin, &bridge);
+    assert_eq!(c.bridge(), Some(bridge.clone()));
+
+    // One-time: a second call is rejected even by the same admin…
+    assert_eq!(
+        c.try_set_bridge(&admin, &bridge),
+        Err(Ok(WraithError::BridgeAlreadySet))
+    );
+    // …and by anyone else.
+    let other = Address::generate(&env);
+    assert_eq!(
+        c.try_set_bridge(&other, &bridge),
+        Err(Ok(WraithError::BridgeAlreadySet))
+    );
+}
+
+#[test]
+fn set_bridge_rejects_wrong_admin() {
+    let (env, c, pool, admin, bridge) = bridge_setup();
+    env.mock_all_auths();
+    // Pre-establish a governance admin (as merged binding work would). `set_bridge`
+    // must then reuse it and reject any other admin.
+    env.as_contract(&pool, || {
+        env.storage().instance().set(&DataKey::Admin, &admin);
+    });
+    let attacker = Address::generate(&env);
+    assert_eq!(
+        c.try_set_bridge(&attacker, &bridge),
+        Err(Ok(WraithError::Unauthorized))
+    );
+    // The established admin can still configure it.
+    c.set_bridge(&admin, &bridge);
+    assert_eq!(c.bridge(), Some(bridge));
+}
+
+#[test]
+fn bridge_mint_requires_bridge_set() {
+    let (env, c, _pool, _admin, _bridge) = bridge_setup();
+    env.mock_all_auths();
+    // No bridge configured yet -> BridgeNotSet (checked before auth).
+    assert_eq!(
+        c.try_bridge_mint(&f(&env, 1)),
+        Err(Ok(WraithError::BridgeNotSet))
+    );
+}
+
+#[test]
+fn bridge_mint_inserts_commitment_and_advances_root() {
+    let (env, c, pool, admin, bridge) = bridge_setup();
+    env.mock_all_auths();
+    c.set_bridge(&admin, &bridge);
+
+    let root_before = c.get_last_root();
+    let commitment = f(&env, 0xBEEF);
+    let idx = c.bridge_mint(&commitment);
+    assert_eq!(idx, 0);
+
+    // Exactly one event from the mint: the `bridge_mint` topic, the leaf index as
+    // a topic, and the commitment in the data map. Asserted immediately, since
+    // `events().all()` only reflects the most recent contract invocation.
+    assert_eq!(env.events().all().events().len(), 1);
+    assert_eq!(
+        env.events().all(),
+        soroban_sdk::vec![
+            &env,
+            (
+                pool.clone(),
+                (Symbol::new(&env, "bridge_mint"), 0u32).into_val(&env),
+                soroban_sdk::map![&env, (Symbol::new(&env, "commitment"), commitment.clone())]
+                    .into_val(&env),
+            ),
+        ]
+    );
+
+    // The bridged note advanced the tree: new root, recorded in history.
+    let root_after = c.get_last_root();
+    assert_ne!(root_before, root_after);
+    assert!(c.is_known_root(&root_after));
+
+    // A second bridged note advances the index and the root again.
+    let idx2 = c.bridge_mint(&f(&env, 0xF00D));
+    assert_eq!(idx2, 1);
+    assert_ne!(c.get_last_root(), root_after);
+}
+
+#[test]
+fn bridge_mint_rejected_for_non_bridge_caller() {
+    let (env, c, pool, admin, bridge) = bridge_setup();
+    env.mock_all_auths();
+    c.set_bridge(&admin, &bridge);
+
+    // Authorise only an attacker (not the configured bridge) for the call: the
+    // contract requires the bridge's auth, so the invocation is rejected.
+    let attacker = Address::generate(&env);
+    let commitment = f(&env, 0xBAD1);
+    let res = c
+        .mock_auths(&[MockAuth {
+            address: &attacker,
+            invoke: &MockAuthInvoke {
+                contract: &pool,
+                fn_name: "bridge_mint",
+                args: (commitment.clone(),).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_bridge_mint(&commitment);
+    assert!(res.is_err());
+
+    // The rejected call inserted nothing: a subsequent authorised mint still
+    // takes leaf index 0 (the tree never advanced).
+    env.mock_all_auths();
+    assert_eq!(c.bridge_mint(&commitment), 0);
 }
