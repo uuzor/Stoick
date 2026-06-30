@@ -1,0 +1,17 @@
+[package]
+name = "bridge-mpt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+soroban-sdk = { version = "26.0.1", features = ["alloc"] }
+
+[dev-dependencies]
+soroban-sdk = { version = "26.0.1", features = ["testutils", "alloc"] }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+testutils = []

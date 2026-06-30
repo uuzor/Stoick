@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["wraith-pool"]
+members = ["wraith-pool", "bridge-mpt"]
 
 [workspace.package]
 edition = "2021"
