@@ -13,8 +13,8 @@ use soroban_sdk::{
 };
 
 use crate::types::{
-    DataKey, DepositEvent, OrderCancelledEvent, OrderMatchedEvent, OrderPlacedEvent, TransferEvent,
-    WithdrawEvent, WraithError,
+    BridgeMintEvent, DataKey, DepositEvent, OrderCancelledEvent, OrderMatchedEvent,
+    OrderPlacedEvent, TransferEvent, WithdrawEvent, WraithError,
 };
 
 /// UltraHonk proof length (SHARED.md §6): exactly 456 * 32 bytes.
@@ -72,6 +72,53 @@ impl WraithPool {
         }
         .publish(&env);
         index
+    }
+
+    /// One-time setter that records the `WraithBridge` contract address allowed to
+    /// call `bridge_mint` (BRIDGE_SPEC §3/§7). A setter (rather than a constructor
+    /// arg) breaks the deploy-time circular dependency: the bridge needs the pool
+    /// address and the pool needs the bridge address.
+    ///
+    /// Admin-gated and one-time: `admin` must authorise the call, must match the
+    /// established governance admin if one already exists (reused from the binding
+    /// work; otherwise this first caller establishes it), and the bridge can only
+    /// be set while still unset.
+    pub fn set_bridge(env: Env, admin: Address, bridge: Address) -> Result<(), WraithError> {
+        admin.require_auth();
+        let s = env.storage().instance();
+        if s.has(&DataKey::Bridge) {
+            return Err(WraithError::BridgeAlreadySet);
+        }
+        match s.get::<DataKey, Address>(&DataKey::Admin) {
+            Some(existing) if existing != admin => return Err(WraithError::Unauthorized),
+            None => s.set(&DataKey::Admin, &admin),
+            _ => {}
+        }
+        s.set(&DataKey::Bridge, &bridge);
+        Ok(())
+    }
+
+    /// Bridge: mint a shielded note for a bridged asset. Callable ONLY by the
+    /// configured bridge contract (BRIDGE_SPEC §7). Inserts `commitment` into the
+    /// same Merkle tree as native deposits — so bridged notes interoperate with
+    /// transfer/swap — and returns the leaf index. No SAC transfer: the backing
+    /// lives in the Ethereum L1 lock, not in this pool.
+    pub fn bridge_mint(env: Env, commitment: BytesN<32>) -> Result<u32, WraithError> {
+        let bridge: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Bridge)
+            .ok_or(WraithError::BridgeNotSet)?;
+        bridge.require_auth();
+
+        let index = merkle::insert(&env, &commitment);
+        BridgeMintEvent { index, commitment }.publish(&env);
+        Ok(index)
+    }
+
+    /// The configured bridge contract address, if `set_bridge` has been called.
+    pub fn bridge(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::Bridge)
     }
 
     /// Bridge: withdraw from Wraith to a classic Stellar account.
