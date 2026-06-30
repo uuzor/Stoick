@@ -6,9 +6,18 @@ The React app for **Wraith**, a privacy platform on Stellar. Four modules —
 > **This app is wired to the LIVE WraithPool on Stellar Testnet.** By default
 > `createWraithSdk()` returns the real `RealWraithSdk` (in `src/lib/real-sdk.ts`),
 > backed by `@wraith/sdk` (Poseidon2 commitments, notes, Merkle tree, Soroban op
-> building), `@stellar/stellar-sdk` (RPC submit) and Freighter (signing). Set
-> `VITE_USE_MOCK=true` to fall back to the offline `MockWraithSdk` for UI dev with
-> no wallet / network.
+> building), `@stellar/stellar-sdk` (RPC submit) and the **Stellar Wallets Kit**
+> (multi-wallet address + signing). Set `VITE_USE_MOCK=true` to fall back to the
+> offline `MockWraithSdk` for UI dev with no wallet / network.
+
+> **Multi-wallet connect.** Wallet connection and signing go through
+> [`@creit.tech/stellar-wallets-kit`](https://github.com/Creit-Tech/Stellar-Wallets-Kit)
+> (pinned `1.9.5`) via a single shared instance in `src/lib/wallet-kit.ts`. The
+> Connect button opens the kit's wallet-select modal, so users can pick **Freighter,
+> xBull, Albedo, Rabet, Lobstr, Hana, HOT Wallet or Klever** — no Freighter lock-in.
+> The choice is persisted to `localStorage` for smooth reconnection. (Ledger, Trezor
+> and WalletConnect need extra module config — WalletConnect additionally a
+> `projectId` — and are not enabled by default.)
 
 ## Status: live vs experimental vs mock
 
@@ -29,8 +38,9 @@ The React app for **Wraith**, a privacy platform on Stellar. Four modules —
    `commitment = hash4(asset_id, amount, owner_key, blinding)` (SHARED §4).
 3. `WraithContract.depositOp` builds the Soroban invoke; `prepareTransaction`
    simulates it (footprint + the source-account auth that covers the SAC transfer).
-4. Freighter signs the prepared XDR; the tx is submitted via `rpc.Server` and polled
-   to `SUCCESS`. The pool returns the new **leaf index**, which is stored with the note.
+4. The connected wallet signs the prepared XDR (via the Stellar Wallets Kit); the tx
+   is submitted via `rpc.Server` and polled to `SUCCESS`. The pool returns the new
+   **leaf index**, which is stored with the note.
 5. The note (secret material + leaf index) is saved to `localStorage` so Portfolio
    shows it and the experimental withdraw can rebuild its Merkle witness.
 
@@ -50,7 +60,8 @@ The React app for **Wraith**, a privacy platform on Stellar. Four modules —
 - **Vite 5** + **React 18** + **TypeScript** (strict)
 - **TailwindCSS 3** (dark "dark-pool / privacy" theme, single spectral accent)
 - **react-router-dom 6** (hash routing: `/bridge`, `/portfolio`, `/pay`, `/swap`)
-- **@stellar/freighter-api** for wallet connection
+- **@creit.tech/stellar-wallets-kit** for multi-wallet connection + signing
+  (Freighter, xBull, Albedo, Rabet, Lobstr, Hana, …)
 
 ## Run
 
@@ -75,7 +86,7 @@ pnpm --filter frontend lint     # ESLint
 | **Portfolio** | `src/components/Portfolio.tsx` | Per-asset shielded balance cards, total estimate, loading + empty states. |
 | **Pay** | `src/components/Pay.tsx` | Recipient key, asset, amount → private transfer via the proof overlay. |
 | **Swap** | `src/components/Swap.tsx` | Pair selector, Buy/Sell toggle, price + amount, Place Order; Open Orders list with Cancel. |
-| Wallet | `src/hooks/useWallet.ts` | Freighter connect, active public key, Testnet check, graceful "Install Freighter" prompt. |
+| Wallet | `src/hooks/useWallet.ts`, `src/lib/wallet-kit.ts` | Multi-wallet connect via the Stellar Wallets Kit modal, active public key, Testnet indicator, persisted wallet choice, graceful "no wallet" handling. |
 | Proof UX | `src/hooks/useProofFlow.ts`, `src/components/ProofProgress.tsx` | Reusable overlay cycling *Generating witness → Computing proof → Submitting transaction → Confirmed*. Wired into Pay and Swap. |
 | **SDK seam** | `src/lib/wraith-sdk.ts` | `WraithSdk` interface, `MockWraithSdk`, and `createWraithSdk()` (live vs mock switch). **The only place protocol calls live.** |
 | **Live client** | `src/lib/real-sdk.ts` | `RealWraithSdk` — deposit/withdraw/portfolio against the deployed pool. |
