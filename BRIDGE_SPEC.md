@@ -110,9 +110,19 @@ contract WraithBridgeL1 {
 ```
 
 **Storage-slot derivation** (for the inclusion proof): for `locks[commitment]` at declaration slot
-`p = 0`, the L1 storage slot is `keccak256(abi.encode(commitment, p))`. The `LockRecord` packs into
-one 32-byte word: `amount` in the low 12 bytes, `token` in the next 20 bytes. The proof reads this one
-word and the contract decodes `(token, amount)`.
+`p = 0`, the L1 storage slot is `keccak256(abi.encode(commitment, uint256(0)))`
+(= `keccak256(commitment ‖ 0x00..00)`). The `LockRecord { address token; uint96 amount; }` packs into
+one 32-byte word `W`, **Solidity declaration-order / low-order-first** (authoritative — proven by the
+L1 `vm.load` test, the §4 snippet's earlier prose was backwards):
+
+```
+W = (uint256(amount) << 160) | uint256(uint160(token))
+  token  = address(uint160(W))   // LOW 20 bytes  (bits 0..159)
+  amount = uint96(W >> 160)      // HIGH 12 bytes (bits 160..255)
+```
+
+`eth_getProof` returns the storage value RLP-encoded with leading zero bytes stripped, so the Soroban
+decoder MUST **left-pad the proven leaf value back to 32 bytes** before applying the formula.
 
 ---
 
