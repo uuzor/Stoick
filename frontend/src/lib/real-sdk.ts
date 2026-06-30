@@ -65,7 +65,7 @@ import type {
   WraithSdk,
 } from './wraith-sdk'
 
-const PRICES: Record<AssetCode, number> = { XLM: 0.39, USDC: 1 }
+const PRICES: Record<AssetCode, number> = { XLM: 0.39, USDC: 1, bETH: 3500, bUSDC: 1 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))

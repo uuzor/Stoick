@@ -10,7 +10,14 @@
 import { formatAmount, parseAmount } from './format'
 import { RealWraithSdk } from './real-sdk'
 
-export type AssetCode = 'XLM' | 'USDC'
+/**
+ * Asset codes the UI knows about. `XLM` / `USDC` are native Stellar shielded assets;
+ * `bETH` / `bUSDC` are *bridged* assets minted by the cross-chain Bridge tab (a lock on
+ * Ethereum Sepolia mints a shielded note with a bridged `asset_id`, BRIDGE_SPEC §3).
+ * Bridged codes are intentionally NOT part of {@link ASSET_OPTIONS} (Pay/Swap stay
+ * native-only); they surface in Portfolio once bridged in.
+ */
+export type AssetCode = 'XLM' | 'USDC' | 'bETH' | 'bUSDC'
 export type OrderSide = 'buy' | 'sell'
 
 export interface ShieldedBalance {
@@ -89,7 +96,7 @@ export interface WraithSdk {
 
 // --- Mock implementation ----------------------------------------------------
 
-const PRICES: Record<AssetCode, number> = { XLM: 0.39, USDC: 1 }
+const PRICES: Record<AssetCode, number> = { XLM: 0.39, USDC: 1, bETH: 3500, bUSDC: 1 }
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -116,7 +123,7 @@ function round2(value: number): number {
 }
 
 class MockWraithSdk implements WraithSdk {
-  private balances: Record<AssetCode, number> = { XLM: 1240.5, USDC: 3500 }
+  private balances: Record<AssetCode, number> = { XLM: 1240.5, USDC: 3500, bETH: 0, bUSDC: 0 }
 
   private orders: OpenOrder[] = [
     {
