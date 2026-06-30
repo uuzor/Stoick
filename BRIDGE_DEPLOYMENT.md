@@ -1,12 +1,30 @@
-# Wraith Bridge — Stellar side live on testnet
+# Wraith Bridge — live on testnet (full L1→L2 loop verified)
 
-The **Stellar half** of the Wraith cross-chain bridge is deployed to Soroban testnet, and the
-trustless showpiece is **verified on-chain**: the deployed Ethereum sync-committee light client
-verified a **real Sepolia `LightClientFinalityUpdate`** — a BLS12-381 aggregate signature by the
-512-member sync committee — and recorded the **real Sepolia execution state root** on Stellar.
+The Wraith cross-chain bridge is deployed and the **complete trustless loop is verified live** —
+Ethereum Sepolia → Stellar — with **no trusted relayer**. Provenance is established by an Ethereum
+sync-committee BLS signature verified natively on Soroban; inclusion by an in-contract Merkle-Patricia
+storage proof; privacy by the shielded pool.
 
 Network: `testnet` · passphrase `Test SDF Network ; September 2015`
 Deployer / admin: `GAGEXK4SPRFYJMR3HXYXMCDBEWBFO4BHJP4XWO3L43HJU366UWPY4MKX` (`wraith-deployer`)
+
+## Full L1→L2 loop — verified live ✅
+
+| Step | Where | Evidence |
+|------|-------|----------|
+| **1. Lock** 0.001 ETH against a Wraith commitment | Sepolia `WraithBridgeL1` [`0xcF40c553…`](https://sepolia.etherscan.io/address/0xcF40c553Cb47A0E3448FF468C8A7ee41769205be) | block 11173795, tx [`0xcf24c4d7…`](https://sepolia.etherscan.io/tx/0xcf24c4d7a905ee39d2f1cbf907b3c179da8e3b11e6b329e455a65ea48f6ce802) |
+| **2. Verify ETH header** (sync-committee BLS) → trusted exec `state_root` | Stellar `EthLightClient` `CCI47AHP…` | `update_header` tx `df258a68…`, head → block 11173818 |
+| **3. Prove inclusion** (in-contract MPT vs `state_root`) + **mint** shielded note | Stellar `WraithBridge` `CB6MKCFR…` → pool `CBCFCJQ5…` | `bridge_in` tx [`4b3760d1…`](https://stellar.expert/explorer/testnet/tx/4b3760d1f31b50da6a54bec54fe5f5645fe1719429f5acc05544c3a431289ffc) **SUCCESS** |
+
+The `bridge_in` call fetched `eth_getProof` for the lock at the light client's head block (9 account
+nodes + 1 storage node), the contract Keccak-verified the Merkle-Patricia path against the trusted
+`state_root`, decoded the locked `(token=ETH, amount=0.001)`, set the replay guard
+(`is_bridged`=true), and minted the commitment into the shielded pool (root advanced to
+`2acd0da6…`). Every value the relayer carried was re-verified on-chain.
+
+> **Why Stellar:** verifying the sync-committee BLS signature costs ~80M gas on the EVM (why everyone
+> SNARK-wraps it); on Soroban it is ~30M of the 100M instruction budget via native BLS12-381 host
+> functions — so the light client runs **directly on-chain, no SNARK needed**.
 
 ---
 

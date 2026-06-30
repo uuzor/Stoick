@@ -28,11 +28,12 @@
   "bridge": {
     "deployedAt": "2026-06-30",
     "lightClient": "CCI47AHPL6RETKEDIUGD3XWSBPOHY3IJAZVKBODCBAKZ6UAP27AQ6WH5",
-    "wraithBridge": "CAY44CMEIJKB2TBVVPFZMEAIDQIROJPB5RIQX5TFQIYCG46WTSWDUXV6",
-    "wraithPoolBridgeEnabled": "CCVYCO7X7Z3NAJ3U3AAC27Y3VOKJ4YKEKQIP6SJ5UQFH7VMXUMVVYIBX",
+    "wraithBridge": "CB6MKCFRU5DYEZ3OMF6OEWNPTHLHBSKSMVOOKOABSBLHCYVTUDGS6AQI",
+    "wraithPoolBridgeEnabled": "CBCFCJQ5SEJJ5PKM64XLL4MENIM4V6QPVOK27GSE55NXKCDGYQ4GUFYV",
+    "wraithBridgeInitialUnwired": "CAY44CMEIJKB2TBVVPFZMEAIDQIROJPB5RIQX5TFQIYCG46WTSWDUXV6",
     "lightClientWasmHash": "5bb07f5d9df9c19941bf9765894169917625b3b4236c3aa97da9d69072786cb3",
     "l1ChainId": 11155111,
-    "l1BridgeAddr": "0x0000000000000000000000000000000000000000",
+    "l1Bridge": "0xcF40c553Cb47A0E3448FF468C8A7ee41769205be",
     "withdrawVf": "CBKB3P72CTZAGODIKMQRLUJ2INHQULK5J66N6QQR7GCHGDUFCTUPJ6M3",
     "nativeAsset": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
     "seed": {
@@ -62,9 +63,15 @@
       "updateHeaderLedger": 3364177,
       "verifiedLive": true
     },
-    "l1Pending": {
-      "reason": "WraithBridgeL1 (Sepolia escrow) needs a funded Sepolia key to deploy; not attempted.",
-      "remainingStep": "Deploy bridge/l1 WraithBridgeL1 on Sepolia, then redeploy WraithBridge with the real l1_bridge_addr (constructor-only field, no setter) and re-run pool.set_bridge."
+    "fullE2E": {
+      "description": "Complete trustless L1->L2 loop verified live: lock 0.001 ETH on Sepolia -> light client verifies the sync-committee BLS header on Stellar -> WraithBridge.bridge_in proves the lock via in-contract MPT against the trusted state_root -> shielded note minted into the pool. No trusted relayer.",
+      "mintedCommitment": "0x1b7ed1ccdbeee9b20e719fb6d2857d7ad04bdbb2c6d1fb113bb5ba1723141963",
+      "amountWei": "1000000000000000",
+      "l1Lock": { "tx": "0xcf24c4d7a905ee39d2f1cbf907b3c179da8e3b11e6b329e455a65ea48f6ce802", "block": 11173795 },
+      "headAdvance": { "tx": "df258a684a4ce4c205954b342d509f46a6f6acc37b8922135d4251c571d26d9d", "finalizedBlock": 11173818, "stateRoot": "be389ba008f23d51e83c16161fd570ff9d775b63e6e8b3aa12d9202e9d78a4cc" },
+      "bridgeIn": { "tx": "4b3760d1f31b50da6a54bec54fe5f5645fe1719429f5acc05544c3a431289ffc", "status": "SUCCESS", "provenAtBlock": 11173818, "accountNodes": 9, "storageNodes": 1 },
+      "poolRootAfterMint": "2acd0da63ec50c4a016218905599891ec228aeaa68981fa815e1f536fa4b3eb8",
+      "verifiedLive": true
     }
   }
 }

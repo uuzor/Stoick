@@ -21,6 +21,24 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for every transaction.
 
 Full contract IDs, transactions, and a one-command reproduction are in [DEPLOYMENT.md](./DEPLOYMENT.md).
 
+## Trustless cross-chain bridge — Ethereum → Stellar (verified live)
+
+The **Bridge** is a genuine **trust-minimized cross-chain bridge**, not a relayer: assets locked on
+Ethereum Sepolia arrive as **shielded notes** on Stellar, with provenance proven on-chain. The full
+loop is verified live (no trusted relayer):
+
+1. **Lock** 0.001 ETH on Sepolia (`WraithBridgeL1` `0xcF40c553…`).
+2. An **Ethereum sync-committee BLS signature** is verified **natively on Soroban** (`EthLightClient`),
+   recording a real Ethereum execution `state_root` on Stellar — the same trust model as Helios, but
+   with **no SNARK-wrap** because Stellar has native BLS12-381 (the check is ~30M of the 100M budget,
+   vs ~80M gas on the EVM).
+3. **`bridge_in`** proves the lock with an **in-contract Merkle-Patricia storage proof** against that
+   `state_root` and **mints a shielded note** ([tx `4b3760d1…`](https://stellar.expert/explorer/testnet/tx/4b3760d1f31b50da6a54bec54fe5f5645fe1719429f5acc05544c3a431289ffc), SUCCESS).
+
+This is the hackathon's "wild" idea — a *cross-chain private bridge using Stellar's BN254/BLS12-381
+compatibility to verify another chain's consensus*. Full evidence + reproduction in
+[BRIDGE_DEPLOYMENT.md](./BRIDGE_DEPLOYMENT.md); design in [BRIDGE_SPEC.md](./BRIDGE_SPEC.md).
+
 ## Modules
 
 | Module | Description |
