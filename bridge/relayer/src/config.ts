@@ -24,6 +24,8 @@ export interface RelayerConfig {
   stellarNetworkPassphrase?: string;
   lightClientContract?: string;
   wraithBridgeContract?: string;
+  /** EthSignalClient contract id ("C...") — the Boundless-Signal light client. */
+  signalClientContract?: string;
   bridgeL1Address?: Hex;
   stellarSignerSecret?: string;
   lightClientAdminSecret?: string;
@@ -51,6 +53,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (lc) cfg.lightClientContract = lc;
   const bridge = clean(env.WRAITH_BRIDGE_CONTRACT);
   if (bridge) cfg.wraithBridgeContract = bridge;
+  const signalClient = clean(env.SIGNAL_CLIENT_CONTRACT);
+  if (signalClient) cfg.signalClientContract = signalClient;
   const l1 = clean(env.BRIDGE_L1_ADDRESS);
   if (l1) cfg.bridgeL1Address = l1 as Hex;
   const signer = clean(env.STELLAR_SIGNER_SECRET);
