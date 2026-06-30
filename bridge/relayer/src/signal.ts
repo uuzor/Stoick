@@ -38,6 +38,10 @@ export const SIGNAL_ARTIFACTS_URL = "https://signal-artifacts.beboundless.xyz/v3
 /** Mainnet Signal-Ethereum guest image id (v1.3.0) — pin into the contract. */
 export const SIGNAL_IMAGE_ID =
   "0x0ccb3d146a7f64e78cc1d146acc26912138ea39bb79b4ca74423389d61b2c30e" as Hex;
+/** Deployed RISC Zero verifier on Stellar testnet (Boundless / Nethermind) — the
+ *  `EthSignalClient` constructor's `risc0_verifier`. Handles the `0x73c457ba` seal. */
+export const SIGNAL_RISC0_VERIFIER_TESTNET =
+  "CANYRGDRBQPXPNEZRXDPETY7L4YVDTKTPP4QKHKZGMMHB74IR5HKIUXD";
 
 /** A consumable Signal proof: seal from the indexer, journal from the artifacts host. */
 export interface SignalProof {
