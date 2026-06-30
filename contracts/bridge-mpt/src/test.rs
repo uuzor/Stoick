@@ -14,7 +14,9 @@ use soroban_sdk::{
 };
 
 use crate::vectors as v;
-use crate::{mpt::MptError, verify_storage, BridgeMpt, BridgeMptClient};
+use crate::{mpt::MptError, verify_storage};
+#[cfg(feature = "contract")]
+use crate::{BridgeMpt, BridgeMptClient};
 
 // ---------------------------------------------------------------------------
 // hex helpers (tests run on the host with std available)
@@ -133,6 +135,7 @@ fn real_sepolia_mapping_slot_balance() {
 // Same proof, but driven through the deployed Soroban contract entrypoint.
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "contract")]
 #[test]
 fn via_contract_client() {
     let env = Env::default();
