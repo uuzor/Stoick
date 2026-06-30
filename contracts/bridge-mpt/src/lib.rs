@@ -92,10 +92,17 @@ pub fn verify_storage(
 }
 
 /// Thin Soroban contract wrapper so `stellar contract build` produces a WASM and
-/// the verifier is callable cross-contract from `WraithBridge::bridge_in`.
+/// the verifier is callable cross-contract.
+///
+/// Gated behind the (default-on) `contract` feature: `WraithBridge` depends on
+/// this crate as an in-process **library** (`default-features = false`) and calls
+/// [`verify_storage`] directly, so it must NOT pull this contract wrapper into the
+/// bridge WASM's exported interface.
+#[cfg(feature = "contract")]
 #[contract]
 pub struct BridgeMpt;
 
+#[cfg(feature = "contract")]
 #[contractimpl]
 impl BridgeMpt {
     /// Verify a storage proof and return the proven 32-byte word. See

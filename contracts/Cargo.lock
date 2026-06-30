@@ -1869,6 +1869,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wraith-bridge"
+version = "0.1.0"
+dependencies = [
+ "bridge-mpt",
+ "soroban-poseidon",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "wraith-pool"
 version = "0.1.0"
 dependencies = [
