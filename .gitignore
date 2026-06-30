@@ -37,3 +37,7 @@ vendor/
 .soroban/
 deployments.json
 *.env
+
+# Bridge committee dump (reproducible public data, ~99KB) — regenerate with
+# node bridge/deploy/fetch-committee.mjs
+bridge/deploy/committee.json

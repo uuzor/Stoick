@@ -24,5 +24,47 @@
     "cancelOrder": "51023894faf88329a2bd937c55ba05731860a5189aafe998e4964cf9881a4063",
     "rootAfterDeposit": "2a58187c17fc52453ebc0a093233af740aa8d47044b83e379aa8c101328d3026",
     "allFlowsVerifiedLive": true
+  },
+  "bridge": {
+    "deployedAt": "2026-06-30",
+    "lightClient": "CCI47AHPL6RETKEDIUGD3XWSBPOHY3IJAZVKBODCBAKZ6UAP27AQ6WH5",
+    "wraithBridge": "CAY44CMEIJKB2TBVVPFZMEAIDQIROJPB5RIQX5TFQIYCG46WTSWDUXV6",
+    "wraithPoolBridgeEnabled": "CCVYCO7X7Z3NAJ3U3AAC27Y3VOKJ4YKEKQIP6SJ5UQFH7VMXUMVVYIBX",
+    "lightClientWasmHash": "5bb07f5d9df9c19941bf9765894169917625b3b4236c3aa97da9d69072786cb3",
+    "l1ChainId": 11155111,
+    "l1BridgeAddr": "0x0000000000000000000000000000000000000000",
+    "withdrawVf": "CBKB3P72CTZAGODIKMQRLUJ2INHQULK5J66N6QQR7GCHGDUFCTUPJ6M3",
+    "nativeAsset": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+    "seed": {
+      "period": 1292,
+      "fork": "fulu",
+      "genesisValidatorsRoot": "d8ea171f3c94aea21ebc42a1ed61052acf3f9209c00e4efbaaddac09ed9b8078",
+      "forkVersion": "90000075",
+      "committeeSize": 512,
+      "bootstrapAnchorRoot": "0x1912e0c2d057011eb9d988c95d4d7820565eac84c8495f726378567542c630b8",
+      "bootstrapAnchorSlot": 10591744
+    },
+    "txs": {
+      "lightClientUpload": "bfb57cfbe01b8c63e0c2cc93d6922c0b0f94781bf016ae223e31e56ee9ec4e22",
+      "lightClientDeploy": "2c13b71bd5cc088eaa25767e1bac83be48c86d95b02946932251540bd1b3d581",
+      "updateHeader": "2f1549ee8bbcdf5d803d11a99886b2d160fd53c094fb6029a65929a2ee56749c",
+      "poolDeploy": "2ef74375746975ff2a3acc43889d2b4cf714dd09d47cd23ae67b7847fade9bdf",
+      "bridgeDeploy": "5ee66771c7dbb817b112fd4be64e8486f9d67e1c2f4706da2dc9ffa3544ef8f7",
+      "setBridge": "df44eec68dad72363ba65d8b8c94d4276f1d58ced117b5712345e5a3b3a06b9a"
+    },
+    "showpiece": {
+      "description": "Real Sepolia sync-committee BLS finality update verified on-chain by EthLightClient.update_header; real ETH execution state_root recorded on Stellar.",
+      "signatureSlot": 10591824,
+      "finalizedExecutionBlock": 11173658,
+      "executionStateRoot": "5e294caed189617cdb5473fc1b9f733f56f0db775b36a585d173b3833cd2ba76",
+      "headAfter": [11173658, "5e294caed189617cdb5473fc1b9f733f56f0db775b36a585d173b3833cd2ba76"],
+      "sepoliaBlockStateRootCrossCheck": "0x5e294caed189617cdb5473fc1b9f733f56f0db775b36a585d173b3833cd2ba76",
+      "updateHeaderLedger": 3364177,
+      "verifiedLive": true
+    },
+    "l1Pending": {
+      "reason": "WraithBridgeL1 (Sepolia escrow) needs a funded Sepolia key to deploy; not attempted.",
+      "remainingStep": "Deploy bridge/l1 WraithBridgeL1 on Sepolia, then redeploy WraithBridge with the real l1_bridge_addr (constructor-only field, no setter) and re-run pool.set_bridge."
+    }
   }
 }
