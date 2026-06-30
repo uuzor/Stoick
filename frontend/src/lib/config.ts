@@ -11,7 +11,7 @@
  *   native SAC  CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
  *   passphrase  "Test SDF Network ; September 2015"
  */
-import { assetFromSac, NATIVE_ASSET_ID, type Field } from '@wraith/sdk'
+import { assetFromSac, hash2, NATIVE_ASSET_ID, toField, type Field } from '@wraith/sdk'
 import type { AssetCode } from './wraith-sdk'
 
 function env(key: string, fallback: string): string {
@@ -54,6 +54,64 @@ export const ENABLE_WITHDRAW = flag('VITE_ENABLE_WITHDRAW')
 /** Optional USDC SAC address — not part of the single-asset testnet demo. */
 export const USDC_SAC = env('VITE_USDC_SAC', '')
 
+// ---------------------------------------------------------------------------
+// Cross-chain bridge (Ethereum Sepolia <-> Stellar). BRIDGE_SPEC §3/§7/§9.
+//
+// PLACEHOLDER addresses below ship with the app so the Bridge tab type-checks,
+// builds, and runs in mock mode TODAY. Fill the `VITE_BRIDGE_*` env vars (or edit
+// these defaults) with the real deployed addresses to take it live. Until the L1
+// bridge + Soroban light-client/bridge contracts are deployed, the live reads
+// fail gracefully and the UI shows a "simulated" light-client head.
+// ---------------------------------------------------------------------------
+
+/** When true, the Bridge tab runs a self-contained mock walkthrough (no wallets). */
+export const USE_MOCK_BRIDGE = USE_MOCK || flag('VITE_USE_MOCK_BRIDGE')
+
+/** Ethereum chain the L1 bridge is deployed on (Sepolia testnet = 11155111). */
+export const L1_CHAIN_ID = Number(env('VITE_L1_CHAIN_ID', '11155111'))
+
+/** Sepolia execution RPC used by viem reads (eth_getProof is done by the relayer). */
+export const SEPOLIA_RPC_URL = env('VITE_SEPOLIA_RPC_URL', 'https://ethereum-sepolia-rpc.publicnode.com')
+
+/** `WraithBridgeL1` escrow address on Sepolia (locks/unlocks the backing). */
+export const L1_BRIDGE_ADDRESS = env(
+  'VITE_L1_BRIDGE_ADDRESS',
+  '0x0000000000000000000000000000000000000000',
+)
+
+/** Soroban `EthLightClient` contract id (trusted Ethereum head on Stellar). */
+export const ETH_LIGHT_CLIENT_ID = env('VITE_ETH_LIGHT_CLIENT', '')
+
+/** Soroban `WraithBridge` contract id (bridge_in / bridge_out). */
+export const WRAITH_BRIDGE_ID = env('VITE_WRAITH_BRIDGE', '')
+
+/**
+ * Optional relayer base URL. If set, `requestBridgeIn` POSTs the commitment to nudge
+ * the relayer; otherwise the UI just polls the Stellar `BridgeInEvent` (the relayer
+ * watches L1 `Locked` events on its own — BRIDGE_SPEC §8).
+ */
+export const RELAYER_URL = env('VITE_RELAYER_URL', '')
+
+/**
+ * Bridge-asset domain separator (BRIDGE_SPEC §3):
+ *   asset_id(bToken) = hash2( hash2(eth_chain_id, eth_token_address_as_field), BRIDGE_DOMAIN )
+ * The numeric domain is not pinned by the spec; this default is deterministic and
+ * overridable so it can be aligned with the contract when the derivation lands on-chain.
+ */
+export const BRIDGE_DOMAIN: Field = toField(env('VITE_BRIDGE_DOMAIN', '0x627269646765')) // "bridge"
+
+/** Map a 20-byte L1 token address (hex) to its bridged Wraith `asset_id` field. */
+export function deriveBridgedAssetId(tokenAddressHex: string): Field {
+  const addrField = toField(BigInt(tokenAddressHex))
+  return hash2(hash2(L1_CHAIN_ID, addrField), BRIDGE_DOMAIN)
+}
+
+/** Native ETH is represented on L1 by the zero address (BRIDGE_SPEC §4). */
+export const ETH_L1_ADDRESS = '0x0000000000000000000000000000000000000000'
+
+/** Sepolia test-USDC (Circle faucet token) — override via env for other deployments. */
+export const USDC_L1_ADDRESS = env('VITE_BRIDGE_USDC_L1', '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238')
+
 /** Per-asset on-chain config. `assetId` is the in-circuit field id (native XLM = 0). */
 export interface AssetConfig {
   code: AssetCode
@@ -75,6 +133,22 @@ export const ASSET_CONFIG: Record<AssetCode, AssetConfig> = {
     assetId: USDC_SAC ? assetFromSac(USDC_SAC, 'USDC').assetId : 0n,
     sac: USDC_SAC || undefined,
     decimals: 7,
+    priceUsd: 1,
+  },
+  // Bridged assets: no Stellar SAC (the backing lives in the L1 escrow). The
+  // `assetId` follows BRIDGE_SPEC §3 so the minted note interoperates with the pool.
+  bETH: {
+    code: 'bETH',
+    assetId: deriveBridgedAssetId(ETH_L1_ADDRESS),
+    sac: undefined,
+    decimals: 18,
+    priceUsd: 3500,
+  },
+  bUSDC: {
+    code: 'bUSDC',
+    assetId: deriveBridgedAssetId(USDC_L1_ADDRESS),
+    sac: undefined,
+    decimals: 6,
     priceUsd: 1,
   },
 }
