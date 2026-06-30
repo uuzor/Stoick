@@ -1,25 +1,26 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { ISupportedWallet } from '@creit.tech/stellar-wallets-kit'
 import {
-  getAddress,
-  getNetwork,
-  isAllowed,
-  isConnected,
-  requestAccess,
-} from '@stellar/freighter-api'
+  clearStoredWalletId,
+  kit,
+  persistWalletId,
+  readStoredWalletId,
+  WalletNetwork,
+} from '../lib/wallet-kit'
 
 export type WalletStatus =
-  | 'checking' // probing for the extension / existing session
-  | 'not-installed' // Freighter is not available in this browser
-  | 'disconnected' // installed, but no approved account yet
-  | 'connecting' // awaiting the user's approval in the popup
+  | 'checking' // probing for installed wallets / an existing session
+  | 'not-installed' // no Stellar wallet is available in this browser
+  | 'disconnected' // a wallet is available, but none is connected yet
+  | 'connecting' // the wallet-select modal is open / awaiting approval
   | 'connected'
 
 export interface WalletState {
   status: WalletStatus
   address: string | null
-  /** Network reported by Freighter, e.g. "TESTNET" / "PUBLIC". */
+  /** Network reported by the connected wallet, e.g. "TESTNET" / "PUBLIC". */
   network: string | null
-  /** True only when Freighter is pointed at Stellar Testnet. */
+  /** True only when the connected wallet is pointed at Stellar Testnet. */
   isTestnet: boolean
   installed: boolean
   error: string | null
@@ -28,6 +29,7 @@ export interface WalletState {
 }
 
 const TESTNET = 'TESTNET'
+/** Where users without any Stellar wallet can get one (the kit modal also links installs). */
 export const FREIGHTER_INSTALL_URL = 'https://www.freighter.app/'
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -35,10 +37,11 @@ function errorMessage(err: unknown, fallback: string): string {
 }
 
 /**
- * Freighter wallet integration. Drives the Connect button: detects whether the
- * extension is installed, requests access, reads the active public key, and
- * surfaces whether the user is on Testnet. Degrades gracefully (install prompt)
- * when Freighter is absent.
+ * Multi-wallet integration via the Stellar Wallets Kit. Drives the Connect button:
+ * `connect()` opens the kit's wallet-select modal (Freighter, xBull, Albedo, Rabet,
+ * Lobstr, Hana, …), records the choice, reads the active public key, and surfaces a
+ * Testnet indicator. The selected wallet is persisted (localStorage) for smooth
+ * reconnection. Degrades gracefully when no wallet is available.
  */
 export function useWallet(): WalletState {
   const [status, setStatus] = useState<WalletStatus>('checking')
@@ -49,42 +52,50 @@ export function useWallet(): WalletState {
 
   const loadNetwork = useCallback(async () => {
     try {
-      const result = await getNetwork()
-      if (!result.error) setNetwork(result.network)
+      const { network: net, networkPassphrase } = await kit.getNetwork()
+      if (networkPassphrase === WalletNetwork.PUBLIC) setNetwork('PUBLIC')
+      else if (networkPassphrase === WalletNetwork.TESTNET) setNetwork(TESTNET)
+      else setNetwork(net ? net.toUpperCase() : TESTNET)
     } catch {
-      setNetwork(null)
+      // Some wallets don't expose getNetwork; the kit signs on Testnet regardless.
+      setNetwork(TESTNET)
     }
   }, [])
 
-  // On mount: probe for the extension and any previously approved session.
+  // On mount: detect available wallets and silently resume a persisted session.
   useEffect(() => {
     let cancelled = false
     async function probe() {
+      let anyAvailable = false
       try {
-        const conn = await isConnected()
-        const present = !conn.error && conn.isConnected
+        const supported = await kit.getSupportedWallets()
+        anyAvailable = supported.some((w) => w.isAvailable)
+      } catch {
+        anyAvailable = false
+      }
+      if (cancelled) return
+      setInstalled(anyAvailable)
+
+      const storedId = readStoredWalletId()
+      if (!storedId) {
+        if (!cancelled) setStatus(anyAvailable ? 'disconnected' : 'not-installed')
+        return
+      }
+      try {
+        kit.setWallet(storedId)
+        // skipRequestAccess keeps Freighter from popping a prompt on load; other
+        // wallets simply ignore it (and may stay disconnected until reconnected).
+        const { address: addr } = await kit.getAddress({ skipRequestAccess: true })
         if (cancelled) return
-        setInstalled(present)
-        if (!present) {
-          setStatus('not-installed')
+        if (addr) {
+          setAddress(addr)
+          await loadNetwork()
+          if (!cancelled) setStatus('connected')
           return
         }
-        const allowed = await isAllowed()
-        if (!allowed.error && allowed.isAllowed) {
-          const addr = await getAddress()
-          if (!cancelled && !addr.error && addr.address) {
-            setAddress(addr.address)
-            await loadNetwork()
-            if (!cancelled) setStatus('connected')
-            return
-          }
-        }
-        if (!cancelled) setStatus('disconnected')
+        setStatus('disconnected')
       } catch {
-        if (!cancelled) {
-          setInstalled(false)
-          setStatus('not-installed')
-        }
+        if (!cancelled) setStatus(anyAvailable ? 'disconnected' : 'not-installed')
       }
     }
     void probe()
@@ -95,33 +106,39 @@ export function useWallet(): WalletState {
 
   const connect = useCallback(async () => {
     setError(null)
+    setStatus('connecting')
     try {
-      const conn = await isConnected()
-      if (conn.error || !conn.isConnected) {
-        setInstalled(false)
-        setStatus('not-installed')
-        setError('Freighter is not installed.')
-        return
-      }
-      setInstalled(true)
-      setStatus('connecting')
-      const access = await requestAccess()
-      if (access.error || !access.address) {
-        setStatus('disconnected')
-        setError(access.error?.message ?? 'Connection request was rejected.')
-        return
-      }
-      setAddress(access.address)
-      await loadNetwork()
-      setStatus('connected')
+      await kit.openModal({
+        onWalletSelected: async (option: ISupportedWallet) => {
+          try {
+            kit.setWallet(option.id)
+            persistWalletId(option.id)
+            const { address: addr } = await kit.getAddress()
+            setAddress(addr)
+            setInstalled(true)
+            await loadNetwork()
+            setError(null)
+            setStatus('connected')
+          } catch (err) {
+            setStatus('disconnected')
+            setError(errorMessage(err, 'Could not read the wallet address.'))
+          }
+        },
+        onClosed: () => {
+          // Modal dismissed without a selection — not an error, just stay put.
+          setStatus((prev) => (prev === 'connected' ? prev : 'disconnected'))
+        },
+      })
     } catch (err) {
       setStatus('disconnected')
-      setError(errorMessage(err, 'Could not connect to Freighter.'))
+      setError(errorMessage(err, 'Could not open the wallet selector.'))
     }
   }, [loadNetwork])
 
   const disconnect = useCallback(() => {
-    // Freighter exposes no programmatic disconnect; we clear local UI state.
+    // Clears async sessions (e.g. WalletConnect) plus our local UI + persisted state.
+    void kit.disconnect().catch(() => undefined)
+    clearStoredWalletId()
     setAddress(null)
     setNetwork(null)
     setError(null)

@@ -1,7 +1,7 @@
 /**
  * RealWraithSdk — the live client that talks to the deployed WraithPool on Stellar
  * Testnet, backed by `@wraith/sdk` (crypto + Soroban op building), `@stellar/stellar-sdk`
- * (RPC submit) and Freighter (signing).
+ * (RPC submit) and the Stellar Wallets Kit (multi-wallet address + signing).
  *
  * It implements the same `WraithSdk` surface the UI is written against (see
  * `wraith-sdk.ts`), so it drops in behind `createWraithSdk()` with no UI changes.
@@ -35,7 +35,6 @@ import {
   TransactionBuilder,
   xdr,
 } from '@stellar/stellar-sdk'
-import { getAddress, signTransaction } from '@stellar/freighter-api'
 import {
   ASSET_CONFIG,
   ENABLE_WITHDRAW,
@@ -43,6 +42,7 @@ import {
   POOL_CONTRACT_ID,
   SOROBAN_RPC_URL,
 } from './config'
+import { getKitAddress, signWithKit } from './wallet-kit'
 import { formatAmount } from './format'
 import {
   addNote,
@@ -88,11 +88,11 @@ export function baseUnitsToNumber(value: bigint, decimals: number): number {
   return Number(value) / divisor
 }
 
-function freighterError(err: unknown): string {
+function walletError(err: unknown): string {
   if (err && typeof err === 'object' && 'message' in err) {
     return String((err as { message: unknown }).message)
   }
-  return typeof err === 'string' ? err : 'Freighter rejected the request.'
+  return typeof err === 'string' ? err : 'The wallet rejected the request.'
 }
 
 export class RealWraithSdk implements WraithSdk {
@@ -105,18 +105,23 @@ export class RealWraithSdk implements WraithSdk {
     return new rpc.Server(SOROBAN_RPC_URL)
   }
 
-  /** The active Freighter account, or a clear error if not connected. */
+  /** The active wallet account, or a clear error if not connected. */
   private async requireAddress(): Promise<string> {
-    const res = await getAddress()
-    if (res.error || !res.address) {
-      throw new Error('Connect Freighter (on Stellar Testnet) before submitting.')
+    try {
+      return await getKitAddress()
+    } catch (err) {
+      throw new Error(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Connect a Stellar wallet (on Testnet) before submitting.',
+      )
     }
-    return res.address
   }
 
   /**
-   * Prepare → sign (Freighter) → submit → confirm a single invoke op. Returns the tx
-   * hash plus the contract's return value (the deposit leaf index, for instance).
+   * Prepare → sign (via the connected wallet) → submit → confirm a single invoke op.
+   * Returns the tx hash plus the contract's return value (the deposit leaf index, for
+   * instance).
    */
   private async submitOp(
     op: xdr.Operation,
@@ -130,12 +135,13 @@ export class RealWraithSdk implements WraithSdk {
     })
     // Simulate to compute the Soroban footprint, auth and resource fees.
     const prepared = await server.prepareTransaction(tx)
-    const signRes = await signTransaction(prepared.toXDR(), {
-      networkPassphrase: NETWORK_PASSPHRASE,
-      address: from,
-    })
-    if (signRes.error) throw new Error(freighterError(signRes.error))
-    const signed = TransactionBuilder.fromXDR(signRes.signedTxXdr, NETWORK_PASSPHRASE)
+    let signedTxXdr: string
+    try {
+      signedTxXdr = await signWithKit(prepared.toXDR(), from)
+    } catch (err) {
+      throw new Error(walletError(err))
+    }
+    const signed = TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE)
     const sent = await server.sendTransaction(signed)
     if (sent.status === 'ERROR') {
       throw new Error(`Submission failed: ${JSON.stringify(sent.errorResult ?? sent.status)}`)
