@@ -1,37 +1,17 @@
-import { useState } from 'react'
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { Wallet } from './components/Wallet'
 import { Landing } from './components/Landing'
 import LightPillar from './components/LightPillar'
 
-const ENTERED_KEY = 'wraith:entered'
+// Two routes: the moody VHS landing at "/", and the shielded wallet at "/app"
+// (Portfolio IS the app; Deposit / Send / Swap / Receive open as sheets over it).
 
-// Wraith is one surface — a shielded wallet. A moody VHS landing gates it; "Enter"
-// drops you into the wallet, which floats over an ambient black-and-white light
-// pillar. (Portfolio IS the app; Deposit / Send / Swap / Receive open as sheets.)
-export default function App() {
-  const [entered, setEntered] = useState(() => {
-    try {
-      return sessionStorage.getItem(ENTERED_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
+function LandingRoute() {
+  const navigate = useNavigate()
+  return <Landing onEnter={() => navigate('/app')} />
+}
 
-  if (!entered) {
-    return (
-      <Landing
-        onEnter={() => {
-          try {
-            sessionStorage.setItem(ENTERED_KEY, '1')
-          } catch {
-            /* sessionStorage may be unavailable */
-          }
-          setEntered(true)
-        }}
-      />
-    )
-  }
-
+function AppRoute() {
   return (
     <>
       {/* Ambient light-pillar backdrop — black & white, subtle, behind the wallet. */}
@@ -39,17 +19,27 @@ export default function App() {
         <LightPillar
           topColor="#E8E8E6"
           bottomColor="#3C3C3A"
-          intensity={0.9}
-          rotationSpeed={0.18}
+          intensity={1.0}
+          rotationSpeed={0.3}
           glowAmount={0.005}
           pillarWidth={3.0}
           pillarHeight={0.4}
-          noiseIntensity={0.35}
+          noiseIntensity={0.5}
           mixBlendMode="screen"
           quality="medium"
         />
       </div>
       <Wallet />
     </>
+  )
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<LandingRoute />} />
+      <Route path="/app" element={<AppRoute />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   )
 }
