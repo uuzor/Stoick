@@ -14,13 +14,17 @@
 import { assetFromSac, hash2, NATIVE_ASSET_ID, toField, type Field } from '@wraith/sdk'
 import type { AssetCode } from './wraith-sdk'
 
+// Tolerate a missing `import.meta.env` (Node/SSR/test contexts, where Vite hasn't injected it)
+// by falling back to the compiled defaults rather than throwing.
+const META_ENV = (import.meta.env ?? {}) as Partial<ImportMetaEnv>
+
 function env(key: string, fallback: string): string {
-  const v = import.meta.env[key as keyof ImportMetaEnv] as string | undefined
+  const v = META_ENV[key as keyof ImportMetaEnv] as string | undefined
   return v && v.length > 0 ? v : fallback
 }
 
 function flag(key: string): boolean {
-  const v = import.meta.env[key as keyof ImportMetaEnv] as string | undefined
+  const v = META_ENV[key as keyof ImportMetaEnv] as string | undefined
   return v === 'true' || v === '1'
 }
 
@@ -45,6 +49,10 @@ export const NATIVE_SAC = env(
 
 /** Soroban RPC endpoint (Testnet by default). */
 export const SOROBAN_RPC_URL = env('VITE_SOROBAN_RPC_URL', 'https://soroban-testnet.stellar.org')
+
+/** Ledger the pool was deployed at — the client indexer's cold-start floor (clamped to the
+ *  RPC's event-retention window, so older history is unavailable). */
+export const POOL_DEPLOY_LEDGER = Number(env('VITE_POOL_DEPLOY_LEDGER', '3382667'))
 
 /** Stellar network passphrase. */
 export const NETWORK_PASSPHRASE = env('VITE_NETWORK_PASSPHRASE', 'Test SDF Network ; September 2015')

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { ReactNode, SVGProps } from 'react'
 import { useWraith } from '../hooks/useWraith'
 import { clearAllNotes } from '../lib/note-store'
-import { ASSETS } from '../lib/assets'
+import { assetMeta } from '../lib/tokens'
 import { formatUsd } from '../lib/format'
 import { AssetAvatar, CopyIcon, GhostMark } from './ui'
 import { CoinBadge } from './BrandIcons'
@@ -208,7 +208,7 @@ export function Wallet() {
                 <AssetAvatar code={b.asset} className="h-9 w-9" />
                 <div className="min-w-0">
                   <div className="text-sm font-semibold tracking-tight text-zinc-100">{b.asset}</div>
-                  <div className="truncate text-xs text-zinc-400">{ASSETS[b.asset].name}</div>
+                  <div className="truncate text-xs text-zinc-400">{assetMeta(b.asset).name}</div>
                 </div>
                 <div className="ml-auto text-right">
                   <div className="font-mono text-sm tabular-nums text-zinc-100">{revealed ? b.amount : HIDDEN}</div>
@@ -220,13 +220,13 @@ export function Wallet() {
         )}
       </section>
 
-      {/* Footer — local data reset */}
-      <footer className="mt-8 flex justify-center">
-        <button
-          type="button"
-          onClick={() => void clearLocalData()}
-          className="text-xs text-zinc-600 transition hover:text-zinc-400"
-        >
+      {/* Footer — faucet + local data reset */}
+      <footer className="mt-8 flex items-center justify-center gap-3 text-xs text-zinc-600">
+        <a href="#/faucet" className="transition hover:text-zinc-400">
+          Test token faucet
+        </a>
+        <span className="text-ink-700">·</span>
+        <button type="button" onClick={() => void clearLocalData()} className="transition hover:text-zinc-400">
           Clear local data
         </button>
       </footer>

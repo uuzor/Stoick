@@ -3,6 +3,7 @@ import { useWraith } from '../hooks/useWraith'
 import { useProofFlow } from '../hooks/useProofFlow'
 import { formatAmount, parseAmount } from '../lib/format'
 import type { OpenOrder, OrderSide } from '../lib/wraith-sdk'
+import { TOKEN_OPTIONS } from '../lib/tokens'
 import {
   Badge,
   Button,
@@ -11,12 +12,12 @@ import {
   Field,
   PageIntro,
   SectionHeading,
+  Select,
   TextInput,
   ToggleGroup,
 } from './ui'
 import { ProofProgress } from './ProofProgress'
 
-const PAIR = { base: 'XLM', quote: 'USDC' } as const
 const MID_PRICE = 0.3965
 
 function timeAgo(timestamp: number): string {
@@ -85,17 +86,17 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
   const proof = useProofFlow()
 
   const [side, setSide] = useState<OrderSide>('buy')
+  const [base, setBase] = useState('XLM')
+  const [quote, setQuote] = useState('USDC')
   const [price, setPrice] = useState('')
   const [amount, setAmount] = useState('')
   const [cancelingId, setCancelingId] = useState<string | null>(null)
 
-  const valid = parseAmount(price) > 0 && parseAmount(amount) > 0
+  const valid = base !== quote && parseAmount(price) > 0 && parseAmount(amount) > 0
   const total = valid ? parseAmount(price) * parseAmount(amount) : 0
 
   async function onPlace() {
-    const result = await proof.run(() =>
-      sdk.placeOrder({ base: PAIR.base, quote: PAIR.quote, side, price, amount }),
-    )
+    const result = await proof.run(() => sdk.placeOrder({ base, quote, side, price, amount }))
     if (result) {
       await refreshOrders()
       await refreshBalances()
@@ -130,16 +131,24 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
 
       <div className={embedded ? 'space-y-5' : 'grid gap-5 lg:grid-cols-5'}>
         <Card className="p-6 lg:col-span-2">
-          <SectionHeading
-            icon={<ChartIcon className="h-4 w-4" />}
-            title="Place order"
-            hint={`${PAIR.base}/${PAIR.quote}`}
-          />
+          <SectionHeading icon={<ChartIcon className="h-4 w-4" />} title="Place order" hint={`${base}/${quote}`} />
 
-          <div className="mb-4 mt-3 flex items-center justify-between rounded-xl border border-ink-700 bg-ink-900/60 px-3.5 py-2.5">
+          <div className="mb-4 mt-3 grid grid-cols-2 gap-3">
+            <Field label="Base">
+              <Select value={base} onChange={(e) => setBase(e.target.value)} options={TOKEN_OPTIONS} />
+            </Field>
+            <Field label="Quote">
+              <Select value={quote} onChange={(e) => setQuote(e.target.value)} options={TOKEN_OPTIONS} />
+            </Field>
+          </div>
+          {base === quote && (
+            <p className="mb-3 text-xs text-amber-400">Pick two different tokens.</p>
+          )}
+
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-ink-700 bg-ink-900/60 px-3.5 py-2.5">
             <span className="text-xs font-medium text-zinc-400">Mid price</span>
             <span className="font-mono text-sm text-zinc-200">
-              {MID_PRICE.toFixed(4)} {PAIR.quote}
+              {MID_PRICE.toFixed(4)} {quote}
             </span>
           </div>
 
@@ -162,7 +171,7 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
                 },
               ]}
             />
-            <Field label={`Price (${PAIR.quote} per ${PAIR.base})`}>
+            <Field label={`Price (${quote} per ${base})`}>
               <TextInput
                 mono
                 inputMode="decimal"
@@ -171,7 +180,7 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
                 onChange={(e) => setPrice(e.target.value)}
               />
             </Field>
-            <Field label={`Amount (${PAIR.base})`}>
+            <Field label={`Amount (${base})`}>
               <TextInput
                 mono
                 inputMode="decimal"
@@ -183,7 +192,7 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
             <div className="flex items-center justify-between text-sm">
               <span className="text-zinc-500">Est. {side === 'buy' ? 'cost' : 'proceeds'}</span>
               <span className="font-mono tabular-nums text-zinc-200">
-                {formatAmount(total)} {PAIR.quote}
+                {formatAmount(total)} {quote}
               </span>
             </div>
             <Button className="w-full" disabled={!valid} onClick={() => void onPlace()}>

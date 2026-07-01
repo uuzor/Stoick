@@ -1,29 +1,19 @@
 /**
- * Merkle witnesses from the pool's on-chain frontier.
+ * Merkle witnesses for a private transfer's freshly-created **output** notes, computed from
+ * the pool's on-chain frontier (SHARED §5).
  *
- * The pool is an append-only incremental Merkle tree (SHARED §5). It stores only the
- * *frontier* (`filledSubtrees`) + a 100-deep root history — never the full leaf set —
- * and the testnet RPC prunes old events, so the historical leaves needed to rebuild the
- * tree the usual way are simply gone.
+ * The pool is an append-only incremental Merkle tree that stores only the *frontier*
+ * (`filledSubtrees`) + a 100-deep root history — never the full leaf set. The sender needs a
+ * spendable witness for each output note *before* it lands on-chain, to seal into the
+ * transfer memo. The new leaves are contiguous, so each missing sibling is either the old
+ * left boundary (`frontierBefore[level]`) or an empty right subtree (`ZEROS[level]`) — enough
+ * to build the witness without the historical leaves (see {@link witnessesAfterInserts}).
  *
- * But we don't need them. The authentication path of the **most-recently appended leaf**
- * is fully determined by the frontier: at level `i`, the sibling is `Frontier(i)` when the
- * leaf's index bit is 1 (it's a right child) and the empty-subtree `ZEROS[i]` when the bit
- * is 0. So we read the frontier from instance storage and build the witness directly. We
- * capture it at deposit time (while the note is still the latest leaf) and prove later
- * against that historical — but still `is_known_root` — root.
+ * Everything else (spending a note, rebuilding the tree, discovery) is now handled by the
+ * client indexer, which rebuilds the full leaf set from events. See lib/indexer.
  */
 import { Contract, rpc, scValToNative, xdr } from '@stellar/stellar-sdk'
-import {
-  bytesToField,
-  fieldToHex,
-  hash2,
-  hexToField,
-  MerkleTree,
-  TREE_DEPTH,
-  ZEROS,
-  type Field,
-} from '@wraith/sdk'
+import { bytesToField, hash2, MerkleTree, TREE_DEPTH, ZEROS, type Field } from '@wraith/sdk'
 
 export interface PoolTreeState {
   /** `filledSubtrees[i]` for i in [0, TREE_DEPTH). */
@@ -34,13 +24,6 @@ export interface PoolTreeState {
   lastRoot: Field
   /** Retained root history (oldest first), mirroring the contract's ring buffer. */
   roots: Field[]
-}
-
-export interface StoredWitness {
-  pathElements: string[] // hex fields, length TREE_DEPTH
-  pathIndices: number[]
-  root: string // hex field
-  leafIndex: number
 }
 
 export interface MerkleWitness {
@@ -76,49 +59,6 @@ export async function readPoolTreeState(server: rpc.Server, poolId: string): Pro
   for (let i = 0; i < TREE_DEPTH; i++) if (frontier[i] === undefined) frontier[i] = ZEROS[i]!
   const lastRoot = roots.length ? roots[roots.length - 1]! : ZEROS[TREE_DEPTH]!
   return { frontier, nextIndex, lastRoot, roots }
-}
-
-/**
- * Build the Merkle witness for `commitment` at `leafIndex`, assuming it is the latest
- * leaf (index === nextIndex - 1). Validates by folding to the on-chain root; throws if
- * the note is no longer the latest leaf (the tree advanced under a concurrent insert).
- */
-export function witnessForLatestLeaf(commitment: Field, leafIndex: number, state: PoolTreeState): MerkleWitness {
-  const pathElements: Field[] = []
-  const pathIndices: number[] = []
-  let idx = leafIndex
-  for (let level = 0; level < TREE_DEPTH; level++) {
-    const bit = idx & 1
-    pathElements.push(bit === 1 ? state.frontier[level]! : ZEROS[level]!)
-    pathIndices.push(bit)
-    idx = Math.floor(idx / 2)
-  }
-  const root = MerkleTree.rootFromProof({ leaf: commitment, pathElements, pathIndices })
-  if (root !== state.lastRoot) {
-    throw new Error(
-      'Merkle witness does not fold to the on-chain root — the note is not the latest leaf (the tree advanced). Its path must be captured at deposit time.',
-    )
-  }
-  return { pathElements, pathIndices, root }
-}
-
-/** Serialize a witness for persistence in the note store. */
-export function encodeWitness(w: MerkleWitness, leafIndex: number): StoredWitness {
-  return {
-    pathElements: w.pathElements.map(fieldToHex),
-    pathIndices: w.pathIndices,
-    root: fieldToHex(w.root),
-    leafIndex,
-  }
-}
-
-/** Rehydrate a persisted witness. */
-export function decodeWitness(s: StoredWitness): MerkleWitness {
-  return {
-    pathElements: s.pathElements.map(hexToField),
-    pathIndices: s.pathIndices,
-    root: hexToField(s.root),
-  }
 }
 
 /**

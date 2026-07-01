@@ -20,9 +20,9 @@ import {
   buildWithdrawInputs,
   createNote,
   createOutputNote,
+  deriveViewingKey,
   encodePublicInputs,
   fieldToHex,
-  hexToField,
   NoirProver,
   noteNullifier,
   recipientHash,
@@ -31,28 +31,22 @@ import {
   type Field,
 } from '@wraith/sdk'
 import { rpc, scValToNative, TransactionBuilder, xdr } from '@stellar/stellar-sdk'
-import { ASSET_CONFIG, NETWORK_PASSPHRASE, POOL_CONTRACT_ID, SOROBAN_RPC_URL } from './config'
+import { ASSET_CONFIG, NATIVE_SAC, NETWORK_PASSPHRASE, POOL_CONTRACT_ID, SOROBAN_RPC_URL } from './config'
+import { assetIdFor, assetMeta } from './tokens'
+import { depositBlinding, noteSecret } from './note-secrets'
 import { getKitAddress, signWithKit } from './wallet-kit'
 import { formatAmount } from './format'
 import {
   addNote,
-  attachWitness,
   getSpendingKey,
   loadNotes,
   markSpent,
   toBalanceNote,
   type StoredNote,
 } from './note-store'
-import {
-  decodeWitness,
-  dummyPath,
-  encodeWitness,
-  readPoolTreeState,
-  witnessesAfterInserts,
-  witnessForLatestLeaf,
-  type MerkleWitness,
-} from './merkle-witness'
-import { decodeReceiveCode, encryptNote, type NotePayload } from './note-crypto'
+import { dummyPath, readPoolTreeState, witnessesAfterInserts, type MerkleWitness } from './merkle-witness'
+import { getIndexer, syncIndexer } from './indexer-service'
+import { decodeReceiveCode, deriveEncKeypair, encryptNote, type NotePayload } from './note-crypto'
 import type {
   AssetCode,
   DepositParams,
@@ -65,8 +59,6 @@ import type {
   WithdrawParams,
   WraithSdk,
 } from './wraith-sdk'
-
-const PRICES: Record<AssetCode, number> = { XLM: 0.39, USDC: 1, bETH: 3500, bUSDC: 1 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -171,29 +163,39 @@ export class RealWraithSdk implements WraithSdk {
     }
   }
 
-  // --- Bridge: deposit (LIVE) ---
+  // --- Deposit any Stellar asset (LIVE, asset-agnostic) ---
 
-  async deposit({ asset, amount }: DepositParams): Promise<TxResult> {
-    const cfg = ASSET_CONFIG[asset]
-    if (!cfg.sac) {
-      throw new Error(
-        `${asset} is not configured for this deployment (no SAC address). The live testnet pool is single-asset (native XLM).`,
-      )
+  async deposit({ asset, amount, sac, decimals, native }: DepositParams): Promise<TxResult> {
+    // Resolve the token descriptor: explicit (curated / custom), else fall back to XLM.
+    const isNative = native ?? asset === 'XLM'
+    const resolvedSac = sac ?? (isNative ? NATIVE_SAC : ASSET_CONFIG[asset]?.sac)
+    const resolvedDecimals = decimals ?? ASSET_CONFIG[asset]?.decimals ?? 7
+    if (!resolvedSac) {
+      throw new Error(`${asset} has no Stellar Asset Contract on this network.`)
     }
-    const amountBase = toBaseUnits(amount, cfg.decimals)
+    const amountBase = toBaseUnits(amount, resolvedDecimals)
     if (amountBase <= 0n) throw new Error('Amount must be greater than zero.')
 
     const from = await this.requireAddress()
+    const assetId = assetIdFor({ native: isNative, sac: resolvedSac })
+    const assetIdHex = fieldToHex(assetId)
+    // Deterministic blinding so this deposit is recoverable on any device: salt = the
+    // number of prior owned deposits of the same (asset, amount), in ledger order.
+    const spendingKey = getSpendingKey()
+    const salt = loadNotes().filter(
+      (n) => n.source === 'deposit' && n.assetId === assetIdHex && BigInt(n.amount) === amountBase,
+    ).length
     const note = createNote({
-      assetId: cfg.assetId,
+      assetId,
       amount: amountBase,
-      spendingKey: getSpendingKey(),
+      spendingKey,
+      blinding: depositBlinding(noteSecret(spendingKey), assetId, amountBase, salt),
     })
-    note.assetAddress = cfg.sac
+    note.assetAddress = resolvedSac
 
     const op = this.contract.depositOp({
       from,
-      asset: cfg.sac,
+      asset: resolvedSac,
       amount: amountBase,
       commitment: note.commitment,
     })
@@ -209,83 +211,65 @@ export class RealWraithSdk implements WraithSdk {
         leafIndex = undefined
       }
     }
-    const meta: { assetCode: AssetCode; txHash: string; leafIndex?: number } = {
+    const meta: {
+      assetCode: AssetCode
+      txHash: string
+      leafIndex?: number
+      decimals: number
+      source: 'deposit'
+    } = {
       assetCode: asset,
       txHash: hash,
+      decimals: resolvedDecimals,
+      source: 'deposit',
     }
     if (leafIndex !== undefined) meta.leafIndex = leafIndex
     addNote(note, meta)
 
-    // Capture the note's Merkle witness now, while it is the latest leaf — this is what
-    // lets it be spent later (transfer/withdraw) without the full leaf history.
-    if (leafIndex !== undefined) {
-      await this.captureWitness(note.commitment, leafIndex).catch((err) =>
-        console.warn('Merkle witness capture failed; sending this note will be unavailable.', err),
-      )
-    }
+    // Fold the freshly-appended leaf into the client indexer (background) so the tree — and
+    // every note's witness — stays current without waiting for the next poll.
+    void syncIndexer()
 
     return { hash }
   }
 
-  /** Read the pool frontier and persist a note's Merkle witness (it must be the latest leaf).
-   *  `leafIndex` defaults to the current last leaf — correct for a note just appended. */
-  private async captureWitness(commitment: Field, leafIndex?: number): Promise<void> {
-    const state = await readPoolTreeState(this.server(), POOL_CONTRACT_ID)
-    const idx = leafIndex ?? state.nextIndex - 1
-    const witness = witnessForLatestLeaf(commitment, idx, state)
-    attachWitness(fieldToHex(commitment), encodeWitness(witness, idx))
-  }
-
   /**
-   * Resolve a spendable Merkle witness for a stored note: prefer the one captured at
-   * deposit time (validating its root is still in the pool's 100-root history); otherwise
-   * reconstruct from the live frontier if the note is still the latest leaf.
+   * A spendable Merkle witness for a stored note, straight from the client indexer's rebuilt
+   * tree. Syncs first so the note's leaf is present and the proof folds to the current
+   * on-chain root (always an `is_known_root`). Supersedes the deposit-time frontier capture.
    */
-  private async resolveWitness(stored: StoredNote): Promise<MerkleWitness> {
-    if (stored.merklePath && stored.merkleIndices && stored.merkleRoot && stored.leafIndex !== undefined) {
-      const witness = decodeWitness({
-        pathElements: stored.merklePath,
-        pathIndices: stored.merkleIndices,
-        root: stored.merkleRoot,
-        leafIndex: stored.leafIndex,
-      })
-      const state = await readPoolTreeState(this.server(), POOL_CONTRACT_ID)
-      if (!state.roots.some((r) => r === witness.root)) {
-        throw new Error(
-          "This note's Merkle root has aged out of the pool's 100-root history. Deposit again to refresh it.",
-        )
-      }
-      return witness
-    }
+  private async spendWitness(stored: StoredNote): Promise<MerkleWitness> {
     if (stored.leafIndex === undefined) {
       throw new Error('This note has no leaf index; its Merkle proof cannot be built.')
     }
-    const state = await readPoolTreeState(this.server(), POOL_CONTRACT_ID)
-    if (stored.leafIndex !== state.nextIndex - 1) {
-      throw new Error(
-        'This note predates the transfer feature and is no longer the latest leaf, so its Merkle path was never captured. Deposit again to enable sending it.',
-      )
+    const indexer = getIndexer()
+    if (!indexer) throw new Error('The wallet indexer is not ready — reconnect your Stellar wallet.')
+    await syncIndexer()
+    if (stored.leafIndex >= indexer.size) {
+      throw new Error('This note is not yet visible on-chain (still indexing). Try again in a moment.')
     }
-    return witnessForLatestLeaf(hexToField(stored.commitment), stored.leafIndex, state)
+    return indexer.witnessFor(stored.leafIndex)
   }
 
   // --- Views (LIVE, from local notes) ---
 
   async getShieldedBalances(): Promise<ShieldedBalance[]> {
     const totals = new Map<AssetCode, bigint>()
+    const decimalsFor = new Map<AssetCode, number>()
     for (const n of loadNotes()) {
       if (n.spent) continue
       totals.set(n.assetCode, (totals.get(n.assetCode) ?? 0n) + BigInt(n.amount))
+      if (n.decimals !== undefined) decimalsFor.set(n.assetCode, n.decimals)
     }
     const out: ShieldedBalance[] = []
     for (const [asset, base] of totals) {
       if (base <= 0n) continue
-      const decimals = ASSET_CONFIG[asset]?.decimals ?? 7
+      const decimals = decimalsFor.get(asset) ?? assetMeta(asset).decimals
       const human = baseUnitsToNumber(base, decimals)
       out.push({
         asset,
         amount: formatAmount(human),
-        usdEstimate: Math.round(human * PRICES[asset] * 100) / 100,
+        usdEstimate: Math.round(human * assetMeta(asset).priceUsd * 100) / 100,
       })
     }
     return out
@@ -298,32 +282,20 @@ export class RealWraithSdk implements WraithSdk {
 
   // --- Withdraw to a classic Stellar account (LIVE, in-browser ZK proof) ---
 
-  async withdraw({ asset, amount, recipient }: WithdrawParams): Promise<TxResult> {
-    const cfg = ASSET_CONFIG[asset]
-    if (!cfg.sac) throw new Error(`${asset} is not configured for this deployment.`)
-
-    const amountBase = toBaseUnits(amount, cfg.decimals)
-    // The withdraw circuit releases a full note (`note_amount == amount`, no change), so
-    // the amount must equal one of the wallet's notes exactly. Prefer a note that already
-    // has a captured Merkle witness.
-    const matches = loadNotes().filter(
-      (n) => !n.spent && n.assetCode === asset && BigInt(n.amount) === amountBase && n.leafIndex !== undefined,
-    )
-    const candidate = matches.find((n) => n.merklePath && n.merkleRoot) ?? matches[0]
-    if (!candidate) {
-      const available = loadNotes()
-        .filter((n) => !n.spent && n.assetCode === asset && n.leafIndex !== undefined)
-        .map((n) => formatAmount(baseUnitsToNumber(BigInt(n.amount), cfg.decimals)))
-      throw new Error(
-        available.length
-          ? `Withdraw sends one full shielded note. Available ${asset} notes: ${available.join(', ')} — withdraw one of those amounts.`
-          : `No shielded ${asset} note is available to withdraw.`,
-      )
-    }
+  async withdraw({ asset, recipient, commitment }: WithdrawParams): Promise<TxResult> {
+    // The withdraw circuit releases one full note (`note_amount == amount`, no change).
+    // The note picker passes the exact note's commitment.
+    const notes = loadNotes()
+    const candidate = commitment
+      ? notes.find((n) => !n.spent && n.commitment === commitment && n.leafIndex !== undefined)
+      : notes.find((n) => !n.spent && n.assetCode === asset && n.leafIndex !== undefined)
+    if (!candidate) throw new Error(`No shielded ${asset} note is available to withdraw.`)
+    const sac = candidate.assetAddress
+    if (!sac) throw new Error(`This ${asset} note has no SAC address; it can't be withdrawn.`)
     const note = toBalanceNote(candidate)
 
-    // The note's Merkle witness comes from the frontier captured at deposit time.
-    const witness = await this.resolveWitness(candidate)
+    // The note's Merkle witness is rebuilt on demand from the client indexer.
+    const witness = await this.spendWitness(candidate)
     const inputs = buildWithdrawInputs({
       merkleRoot: witness.root,
       nullifier: noteNullifier(note),
@@ -358,7 +330,7 @@ export class RealWraithSdk implements WraithSdk {
       publicInputs: encodePublicInputs(proof.publicInputs),
       recipient,
       amount: note.amount,
-      asset: cfg.sac,
+      asset: sac,
     })
     const { hash } = await this.submitOp(op, from)
     markSpent(candidate.commitment)
@@ -368,15 +340,18 @@ export class RealWraithSdk implements WraithSdk {
   // --- Pay: private transfer (LIVE, in-browser UltraHonk proof) ---
 
   async transfer({ recipientKey, asset, amount }: TransferParams): Promise<TxResult> {
-    const cfg = ASSET_CONFIG[asset]
-    const amountBase = toBaseUnits(amount, cfg.decimals)
-    if (amountBase <= 0n) throw new Error('Amount must be greater than zero.')
     const code = decodeReceiveCode(recipientKey)
 
     // Single-input transfer: pick the smallest unspent note of this asset that covers the
-    // amount (the circuit is 2-in/2-out; the second input is a 0-amount dummy).
-    const chosen = loadNotes()
-      .filter((n) => !n.spent && n.assetCode === asset && n.leafIndex !== undefined && BigInt(n.amount) >= amountBase)
+    // amount (the circuit is 2-in/2-out; the second input is a 0-amount dummy). Decimals
+    // come from the notes themselves so any asset — curated or custom — works.
+    const notes = loadNotes().filter((n) => !n.spent && n.assetCode === asset && n.leafIndex !== undefined)
+    const noteDecimals = notes.find((n) => n.decimals !== undefined)?.decimals ?? assetMeta(asset).decimals
+    const amountBase = toBaseUnits(amount, noteDecimals)
+    if (amountBase <= 0n) throw new Error('Amount must be greater than zero.')
+
+    const chosen = notes
+      .filter((n) => BigInt(n.amount) >= amountBase)
       .sort((a, b) => (BigInt(a.amount) < BigInt(b.amount) ? -1 : BigInt(a.amount) > BigInt(b.amount) ? 1 : 0))[0]
     if (!chosen) {
       throw new Error(
@@ -385,7 +360,7 @@ export class RealWraithSdk implements WraithSdk {
     }
 
     const input = toBalanceNote(chosen)
-    const witness = await this.resolveWitness(chosen)
+    const witness = await this.spendWitness(chosen)
     const assetId = input.assetId
     const changeAmount = input.amount - amountBase
 
@@ -441,30 +416,41 @@ export class RealWraithSdk implements WraithSdk {
       await prover.destroy().catch(() => undefined)
     }
 
-    // Note delivery: read the frontier now (post-proving, pre-submit), compute the two
-    // output notes' witnesses, and seal the recipient note (fields + witness) to their
-    // viewing key so they can discover and later spend it. The change memo is left empty —
-    // we keep the change note locally.
+    // Note delivery: compute the two output notes' witnesses, seal the recipient note to
+    // THEIR viewing key, and self-seal the change note to OUR viewing key — so both are
+    // discoverable/recoverable on any device (SPEC — note recovery).
     const pre = await readPoolTreeState(this.server(), POOL_CONTRACT_ID)
     const base = pre.nextIndex
     const [recipientWitness, changeWitness] = witnessesAfterInserts(pre.frontier, base, [
       recipientNote.commitment,
       changeNote.commitment,
     ])
-    const payload: NotePayload = {
+    const noteMemo = (
+      note: { ownerKey: Field; blinding: Field; commitment: Field },
+      noteAmount: bigint,
+      leafIndex: number,
+      witness: MerkleWitness,
+    ): NotePayload => ({
       v: 1,
       code: asset,
+      decimals: noteDecimals,
       assetId: fieldToHex(assetId),
-      amount: amountBase.toString(),
-      ownerKey: fieldToHex(code.ownerKey),
-      blinding: fieldToHex(recipientNote.blinding),
-      commitment: fieldToHex(recipientNote.commitment),
-      leafIndex: base,
-      root: fieldToHex(recipientWitness.root),
-      path: recipientWitness.pathElements.map(fieldToHex),
-      indices: recipientWitness.pathIndices,
-    }
-    const memos = [encryptNote(code.encPub, payload), new Uint8Array(0)]
+      amount: noteAmount.toString(),
+      ownerKey: fieldToHex(note.ownerKey),
+      blinding: fieldToHex(note.blinding),
+      commitment: fieldToHex(note.commitment),
+      leafIndex,
+      root: fieldToHex(witness.root),
+      path: witness.pathElements.map(fieldToHex),
+      indices: witness.pathIndices,
+    })
+    const ownEnc = deriveEncKeypair(deriveViewingKey(spendingKey))
+    const memos = [
+      encryptNote(code.encPub, noteMemo(recipientNote, amountBase, base, recipientWitness)),
+      changeAmount > 0n
+        ? encryptNote(ownEnc.pub, noteMemo(changeNote, changeAmount, base + 1, changeWitness))
+        : new Uint8Array(0),
+    ]
 
     const from = await this.requireAddress()
     const op = this.contract.transferOp({
@@ -474,13 +460,15 @@ export class RealWraithSdk implements WraithSdk {
     })
     const { hash } = await this.submitOp(op, from)
 
-    // Local wallet update: the input note is spent; keep the change note (out index base+1)
-    // with the witness we just computed so it can be spent again.
+    // Local wallet update: the input note is spent; keep the change note (leaf index base+1)
+    // so it can be spent again — its witness is rebuilt on demand from the indexer.
     markSpent(chosen.commitment)
     if (changeAmount > 0n) {
-      addNote(changeNote, { assetCode: asset, txHash: hash })
-      attachWitness(fieldToHex(changeNote.commitment), encodeWitness(changeWitness, base + 1))
+      addNote(changeNote, { assetCode: asset, txHash: hash, leafIndex: base + 1, decimals: noteDecimals, source: 'change' })
     }
+    // Fold the two new output leaves into the indexer (background) so the change note is
+    // immediately spendable and the recipient's balance surfaces on their next sync.
+    void syncIndexer()
     return { hash }
   }
 

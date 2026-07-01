@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useWraith } from '../hooks/useWraith'
 import { useProofFlow } from '../hooks/useProofFlow'
-import { ASSET_OPTIONS } from '../lib/assets'
+import { TOKEN_OPTIONS } from '../lib/tokens'
 import { isPositiveAmount } from '../lib/format'
 import type { AssetCode } from '../lib/wraith-sdk'
 import { Button, Card, Field, PageIntro, SectionHeading, Select, ShieldIcon, TextInput } from './ui'
@@ -58,7 +58,7 @@ export function Pay({ embedded }: { embedded?: boolean } = {}) {
               <Select
                 value={asset}
                 onChange={(e) => setAsset(e.target.value as AssetCode)}
-                options={ASSET_OPTIONS}
+                options={TOKEN_OPTIONS}
               />
             </Field>
             <Field label="Amount">

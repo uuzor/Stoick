@@ -14,6 +14,10 @@ import type { AssetCode } from './wraith-sdk'
 
 const NOTES_PREFIX = 'wraith.notes.v1'
 const SPENDING_PREFIX = 'wraith.spendingKey.v1'
+// The client indexer's persisted state (per identity): the full leaf set (to rebuild the
+// Merkle tree) and the last fully-indexed ledger (cold-start resumes from here).
+const LEAVES_PREFIX = 'wraith.leaves.v1'
+const CURSOR_PREFIX = 'wraith.indexcursor.v1'
 
 // The shielded identity is derived per Stellar address (see lib/shielded-identity).
 // `activeAddress` namespaces both the notes list and the cached spending key, so
@@ -27,6 +31,12 @@ function notesStorageKey(): string {
 function spendingStorageKey(address: string): string {
   return `${SPENDING_PREFIX}:${address}`
 }
+function leavesStorageKey(): string {
+  return `${LEAVES_PREFIX}:${activeAddress ?? 'anon'}`
+}
+function cursorStorageKey(): string {
+  return `${CURSOR_PREFIX}:${activeAddress ?? 'anon'}`
+}
 
 /** A persisted note: a {@link BalanceNote} plus app bookkeeping. */
 export interface StoredNote {
@@ -38,15 +48,13 @@ export interface StoredNote {
   spendingKey: string
   commitment: string
   leafIndex?: number
-  assetAddress?: string
+  assetAddress?: string // the token's SAC address (for withdraw)
+  decimals?: number // token fixed-point decimals (for formatting)
   spent: boolean
   createdAt: number
   txHash?: string
-  /** Merkle witness captured at deposit time, so the note can be spent (transfer/withdraw)
-   *  without the full leaf history. See lib/merkle-witness. */
-  merklePath?: string[] // hex fields, length TREE_DEPTH
-  merkleIndices?: number[]
-  merkleRoot?: string // hex field the path folds to (an `is_known_root`)
+  /** How this note entered the wallet (drives the deterministic deposit salt + provenance). */
+  source?: 'deposit' | 'received' | 'change'
 }
 
 function safeLocalStorage(): Storage | null {
@@ -144,6 +152,22 @@ export function loadNotes(): StoredNote[] {
   return read<StoredNote[]>(notesStorageKey(), [])
 }
 
+/** The client indexer's persisted leaf set (all pool commitments in insertion order). */
+export function loadLeaves(): string[] {
+  return read<string[]>(leavesStorageKey(), [])
+}
+export function saveLeaves(leaves: string[]): void {
+  write(leavesStorageKey(), leaves)
+}
+
+/** The last ledger the indexer fully processed (0 = never indexed → cold start). */
+export function loadIndexCursor(): number {
+  return read<number>(cursorStorageKey(), 0)
+}
+export function saveIndexCursor(ledger: number): void {
+  write(cursorStorageKey(), ledger)
+}
+
 /**
  * Wipe every locally-cached note (all wallet namespaces plus any legacy global key).
  * Leaves the derived spending keys and wallet selection intact — so you stay connected
@@ -155,8 +179,16 @@ export function clearAllNotes(): void {
   const doomed: string[] = []
   for (let i = 0; i < ls.length; i += 1) {
     const k = ls.key(i)
-    // Notes for every wallet + the incoming-note scan cursors (so discovery re-runs).
-    if (k && (k === NOTES_PREFIX || k.startsWith(`${NOTES_PREFIX}:`) || k.startsWith('wraith.scan.'))) {
+    // Notes for every wallet + the indexer's leaves/cursor + legacy scan cursors, so
+    // both discovery and the Merkle-tree rebuild re-run from the pool's deploy ledger.
+    if (
+      k &&
+      (k === NOTES_PREFIX ||
+        k.startsWith(`${NOTES_PREFIX}:`) ||
+        k.startsWith(`${LEAVES_PREFIX}:`) ||
+        k.startsWith(`${CURSOR_PREFIX}:`) ||
+        k.startsWith('wraith.scan.'))
+    ) {
       doomed.push(k)
     }
   }
@@ -170,7 +202,13 @@ function saveNotes(notes: StoredNote[]): void {
 /** Persist a freshly created note (keyed by commitment; replaces any prior copy). */
 export function addNote(
   note: BalanceNote,
-  meta: { assetCode: AssetCode; txHash?: string; leafIndex?: number },
+  meta: {
+    assetCode: AssetCode
+    txHash?: string
+    leafIndex?: number
+    decimals?: number
+    source?: 'deposit' | 'received' | 'change'
+  },
 ): void {
   const stored: StoredNote = {
     assetCode: meta.assetCode,
@@ -186,6 +224,8 @@ export function addNote(
   if (meta.leafIndex !== undefined) stored.leafIndex = meta.leafIndex
   else if (note.leafIndex !== undefined) stored.leafIndex = note.leafIndex
   if (note.assetAddress !== undefined) stored.assetAddress = note.assetAddress
+  if (meta.decimals !== undefined) stored.decimals = meta.decimals
+  if (meta.source !== undefined) stored.source = meta.source
   if (meta.txHash !== undefined) stored.txHash = meta.txHash
 
   const notes = loadNotes().filter((n) => n.commitment !== stored.commitment)
@@ -193,7 +233,11 @@ export function addNote(
   saveNotes(notes)
 }
 
-/** Add a note discovered from an incoming transfer memo. No-op if already known. Returns true if added. */
+/**
+ * Add a note discovered from an incoming transfer memo (or recovered by the indexer). No-op
+ * if already known. Returns true if added. The note is spendable via its `leafIndex` — the
+ * Merkle witness is rebuilt on demand from the indexer, so none is stored here.
+ */
 export function upsertReceivedNote(fields: {
   assetCode: AssetCode
   assetId: string
@@ -203,13 +247,12 @@ export function upsertReceivedNote(fields: {
   spendingKey: string
   commitment: string
   leafIndex: number
-  merklePath: string[]
-  merkleIndices: number[]
-  merkleRoot: string
+  decimals?: number
+  source?: 'deposit' | 'received' | 'change'
 }): boolean {
   const notes = loadNotes()
   if (notes.some((n) => n.commitment === fields.commitment)) return false
-  notes.push({
+  const stored: StoredNote = {
     assetCode: fields.assetCode,
     assetId: fields.assetId,
     amount: fields.amount,
@@ -218,33 +261,14 @@ export function upsertReceivedNote(fields: {
     spendingKey: fields.spendingKey,
     commitment: fields.commitment,
     leafIndex: fields.leafIndex,
-    merklePath: fields.merklePath,
-    merkleIndices: fields.merkleIndices,
-    merkleRoot: fields.merkleRoot,
+    source: fields.source ?? 'received',
     spent: false,
     createdAt: Date.now(),
-  })
+  }
+  if (fields.decimals !== undefined) stored.decimals = fields.decimals
+  notes.push(stored)
   saveNotes(notes)
   return true
-}
-
-/** Attach a captured Merkle witness to a stored note (keyed by commitment hex). */
-export function attachWitness(
-  commitmentHex: string,
-  witness: { pathElements: string[]; pathIndices: number[]; root: string; leafIndex: number },
-): void {
-  const notes = loadNotes().map((n) =>
-    n.commitment === commitmentHex
-      ? {
-          ...n,
-          leafIndex: witness.leafIndex,
-          merklePath: witness.pathElements,
-          merkleIndices: witness.pathIndices,
-          merkleRoot: witness.root,
-        }
-      : n,
-  )
-  saveNotes(notes)
 }
 
 /** Mark a note spent by its commitment hex. */

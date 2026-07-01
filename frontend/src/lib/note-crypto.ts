@@ -28,6 +28,7 @@ const RECEIVE_PREFIX = 'wr1'
 export interface NotePayload {
   v: 1
   code: AssetCode
+  decimals?: number
   assetId: string // hex field
   amount: string // decimal base units
   ownerKey: string // hex field

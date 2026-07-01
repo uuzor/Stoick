@@ -5,17 +5,22 @@ import { useEvmWallet } from '../hooks/useEvmWallet'
 import { useWallet } from '../hooks/useWallet'
 import { addNote, getSpendingKey, loadNotes, markSpent, type StoredNote } from '../lib/note-store'
 import { baseUnitsToNumber, toBaseUnits } from '../lib/real-sdk'
-import { ASSET_CODES, BRIDGED_ASSET_CODES } from '../lib/assets'
 import { formatAmount, isPositiveAmount, isValidStellarAddress, truncateKey } from '../lib/format'
-import type { AssetCode } from '../lib/wraith-sdk'
 import {
-  ASSET_CONFIG,
   ETH_LIGHT_CLIENT_ID,
   L1_BRIDGE_ADDRESS,
   USE_MOCK,
   USE_MOCK_BRIDGE,
   WRAITH_BRIDGE_ID,
 } from '../lib/config'
+import {
+  assetMeta,
+  BRIDGED_ASSET_CODES,
+  CURATED_TOKENS,
+  depositableTokens,
+  resolveCustomToken,
+  type TokenMeta,
+} from '../lib/tokens'
 import {
   BRIDGE_TOKENS,
   commitmentHex,
@@ -67,18 +72,17 @@ const L1_CHAINS: L1[] = ['stellar', 'ethereum']
 /** The L1-native token that enters/leaves each external chain (code = CoinBadge name). */
 const L1_TOKEN: Record<L1, string> = { stellar: 'XLM', ethereum: 'ETH' }
 
-/** The shielded asset a deposit from each chain mints on the Wraith side. */
-const DEPOSIT_SHIELDED: Record<L1, AssetCode> = { stellar: 'XLM', ethereum: 'bETH' }
+/** Notes withdrawable back to each chain: bridged notes go to Ethereum, the rest to Stellar. */
+function isWithdrawableTo(l1: L1, code: string): boolean {
+  const bridged = BRIDGED_ASSET_CODES.includes(code)
+  return l1 === 'ethereum' ? bridged : !bridged
+}
 
-/** Which shielded balances can be withdrawn back to each chain. */
-const WITHDRAW_CODES: Record<L1, AssetCode[]> = { stellar: ASSET_CODES, ethereum: BRIDGED_ASSET_CODES }
-
-/** The L1 token a shielded code redeems to on withdraw. */
-const L1_TOKEN_FOR: Record<AssetCode, string> = {
-  XLM: 'XLM',
-  USDC: 'USDC',
-  bETH: 'ETH',
-  bUSDC: 'USDC',
+/** The L1 token a shielded code redeems to on withdraw (bridged -> its L1 form; else itself). */
+function l1TokenFor(code: string): string {
+  if (code === 'bETH') return 'ETH'
+  if (code === 'bUSDC') return 'USDC'
+  return code
 }
 
 const STEP_LABELS: Record<string, string[]> = {
@@ -99,7 +103,8 @@ const stellarTxUrl = (hash: string) => `https://stellar.expert/explorer/testnet/
 
 /** A stored note's amount as a human string (base units -> decimal). */
 function noteHuman(n: StoredNote): string {
-  return formatAmount(baseUnitsToNumber(BigInt(n.amount), ASSET_CONFIG[n.assetCode].decimals))
+  const decimals = n.decimals ?? assetMeta(n.assetCode).decimals
+  return formatAmount(baseUnitsToNumber(BigInt(n.amount), decimals))
 }
 
 async function pollUntil(
@@ -349,14 +354,42 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
 
   const ethToken = BRIDGE_TOKENS.ETH
 
+  // Deposit-from-Stellar token: any curated token (with a SAC here) or a custom SAC address.
+  const [depositToken, setDepositToken] = useState<TokenMeta>(() => depositableTokens()[0] ?? CURATED_TOKENS[0]!)
+  const [customMode, setCustomMode] = useState(false)
+  const [customSac, setCustomSac] = useState('')
+  const [customError, setCustomError] = useState<string | null>(null)
+  const [resolvingCustom, setResolvingCustom] = useState(false)
+
+  // Resolve a custom token from its SAC address (decimals + symbol) as it's typed.
+  useEffect(() => {
+    if (!customMode) return
+    const sac = customSac.trim()
+    if (!/^C[A-Z2-7]{55}$/.test(sac)) return
+    let cancelled = false
+    setResolvingCustom(true)
+    setCustomError(null)
+    resolveCustomToken(sac)
+      .then((t) => {
+        if (!cancelled) setDepositToken(t)
+      })
+      .catch((e) => {
+        if (!cancelled) setCustomError(e instanceof Error ? e.message : 'Could not resolve token.')
+      })
+      .finally(() => {
+        if (!cancelled) setResolvingCustom(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [customMode, customSac])
+
   // Withdraw operates on individual notes (the circuit releases a full note, no change),
   // so the user picks a note rather than typing an amount.
   const [withdrawNote, setWithdrawNote] = useState('') // selected note commitment
   const withdrawableNotes =
     direction === 'withdraw'
-      ? loadNotes().filter(
-          (n) => !n.spent && WITHDRAW_CODES[l1].includes(n.assetCode) && n.leafIndex !== undefined,
-        )
+      ? loadNotes().filter((n) => !n.spent && isWithdrawableTo(l1, n.assetCode) && n.leafIndex !== undefined)
       : []
   const selectedNote = withdrawableNotes.find((n) => n.commitment === withdrawNote) ?? withdrawableNotes[0] ?? null
   const withdrawAmountHuman = selectedNote ? noteHuman(selectedNote) : ''
@@ -376,11 +409,13 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
   const amountValid = isPositiveAmount(amount)
 
   // Token codes shown in the From / To panels.
-  const fromCode = direction === 'deposit' ? L1_TOKEN[l1] : selectedNote?.assetCode ?? '—'
+  const depositCode = l1 === 'stellar' ? depositToken.code : 'ETH'
+  const shieldedCode = l1 === 'stellar' ? depositToken.code : 'bETH'
+  const fromCode = direction === 'deposit' ? depositCode : selectedNote?.assetCode ?? '—'
   const toCode = direction === 'deposit'
-    ? DEPOSIT_SHIELDED[l1]
+    ? shieldedCode
     : selectedNote
-      ? L1_TOKEN_FOR[selectedNote.assetCode]
+      ? l1TokenFor(selectedNote.assetCode)
       : L1_TOKEN[l1]
 
   const steps = STEP_LABELS[`${direction}:${l1}`]
@@ -426,10 +461,16 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
 
   // --- deposit / withdraw flows --------------------------------------------
 
-  /** Stellar → Wraith: a native single-tx deposit into the pool (LIVE). */
+  /** Stellar → Wraith: a native single-tx deposit of the selected token (LIVE). */
   async function runStellarIn() {
     setStep(0)
-    const { hash } = await sdk.deposit({ asset: 'XLM', amount })
+    const { hash } = await sdk.deposit({
+      asset: depositToken.code,
+      amount,
+      sac: depositToken.sac,
+      decimals: depositToken.decimals,
+      native: depositToken.native,
+    })
     setStellarHash(hash)
     setStep(1)
     await refreshBalances()
@@ -500,6 +541,7 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
       asset: selectedNote.assetCode,
       amount: noteHuman(selectedNote),
       recipient,
+      commitment: selectedNote.commitment,
     })
     setStellarHash(hash)
     setStep(1)
@@ -527,8 +569,13 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
     setError(null); setL1Hash(null); setStellarHash(null); setStatus('running'); setStep(0)
     cancelledRef.current = false
     try {
-      if (direction === 'deposit') l1 === 'stellar' ? await runStellarIn() : await runEthIn()
-      else l1 === 'stellar' ? await runStellarOut() : await runEthOut()
+      if (direction === 'deposit') {
+        if (l1 === 'stellar') await runStellarIn()
+        else await runEthIn()
+      } else {
+        if (l1 === 'stellar') await runStellarOut()
+        else await runEthOut()
+      }
       setStatus('done')
     } catch (err) {
       if (cancelledRef.current) return
@@ -549,8 +596,11 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
       return { label: 'Preparing shielded identity…', onClick: () => {}, disabled: true }
     if (direction === 'deposit') {
       if (l1 === 'stellar') {
+        if (resolvingCustom) return { label: 'Resolving token…', onClick: () => {}, disabled: true }
+        if (!depositToken.sac)
+          return { label: `${depositToken.code} not available here`, onClick: () => {}, disabled: true }
         if (!amountValid) return { label: 'Enter an amount', onClick: () => {}, disabled: true }
-        return { label: 'Deposit', onClick: () => void run() }
+        return { label: `Deposit ${depositToken.code}`, onClick: () => void run() }
       }
       // ethereum deposit
       if (!USE_MOCK_BRIDGE && !BRIDGE_CONFIGURED) return { label: 'Bridge unavailable', onClick: () => {}, disabled: true }
@@ -632,17 +682,80 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
         {/* From */}
         <EndpointPanel role="From" identity={fromIdentity} wallet={evmWalletChip}>
           {direction === 'deposit' ? (
-            <div className="flex items-center gap-3">
-              <input
-                className="input input-mono flex-1 border-none bg-transparent px-0 text-2xl focus:ring-0"
-                inputMode="decimal"
-                placeholder="0.00"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                disabled={running}
-              />
-              <TokenChip code={String(fromCode)} />
-            </div>
+            <>
+              <div className="flex items-center gap-3">
+                <input
+                  className="input input-mono flex-1 border-none bg-transparent px-0 text-2xl focus:ring-0"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  disabled={running}
+                />
+                {l1 === 'stellar' ? (
+                  <div className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-ink-700 bg-ink-850 px-2.5 py-2">
+                    <CoinBadge name={customMode ? depositToken.icon : depositCode} size="sm" />
+                    <select
+                      className="cursor-pointer appearance-none bg-transparent text-sm font-semibold text-zinc-100 focus:outline-none"
+                      value={customMode ? '__custom__' : depositToken.code}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        if (v === '__custom__') {
+                          setCustomMode(true)
+                          setCustomError(null)
+                        } else {
+                          setCustomMode(false)
+                          setCustomSac('')
+                          setCustomError(null)
+                          const t = CURATED_TOKENS.find((c) => c.code === v)
+                          if (t) setDepositToken(t)
+                        }
+                      }}
+                      disabled={running}
+                    >
+                      {CURATED_TOKENS.map((t) => (
+                        <option key={t.code} value={t.code} className="bg-ink-850">
+                          {t.code}
+                          {t.sac ? '' : ' · n/a here'}
+                        </option>
+                      ))}
+                      <option value="__custom__" className="bg-ink-850">
+                        Custom…
+                      </option>
+                    </select>
+                  </div>
+                ) : (
+                  <TokenChip code={String(fromCode)} />
+                )}
+              </div>
+              {direction === 'deposit' && l1 === 'stellar' && customMode && (
+                <div className="mt-2 space-y-1">
+                  <TextInput
+                    mono
+                    placeholder="Token SAC address · C…"
+                    value={customSac}
+                    onChange={(e) => setCustomSac(e.target.value)}
+                    disabled={running}
+                  />
+                  {resolvingCustom && <p className="text-xs text-zinc-500">Resolving token…</p>}
+                  {customError && <p className="text-xs text-red-300">{customError}</p>}
+                  {!resolvingCustom && !customError && depositToken.sac === customSac.trim() && (
+                    <p className="text-xs text-emerald-400">
+                      Found {depositToken.code} · {depositToken.decimals} decimals
+                    </p>
+                  )}
+                </div>
+              )}
+              {direction === 'deposit' && l1 === 'stellar' && !customMode && depositToken.faucet && (
+                <p className="mt-2 text-xs text-zinc-500">
+                  Need test {depositToken.code}? Mint some from the{' '}
+                  <a href="#/faucet" className="text-spectral-soft hover:underline">
+                    faucet
+                  </a>
+                  .
+                </p>
+              )}
+            </>
           ) : withdrawableNotes.length > 0 ? (
             <>
               <div className="flex items-center gap-3">
