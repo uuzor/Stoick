@@ -36,7 +36,7 @@ export function Pay({ embedded }: { embedded?: boolean } = {}) {
   return (
     <div className={embedded ? 'space-y-5' : 'space-y-6'}>
       {!embedded && (
-        <PageIntro title="Pay" subtitle="Send a private payment — amount and participants hidden on-chain." />
+        <PageIntro title="Pay" subtitle="Send a private payment with the amount and participants hidden on-chain." />
       )}
 
       <Card className={embedded ? 'p-5' : 'mx-auto max-w-xl p-6'}>
@@ -44,7 +44,7 @@ export function Pay({ embedded }: { embedded?: boolean } = {}) {
         <div className="mt-5 space-y-4">
           <Field
             label="Recipient key"
-            hint="The recipient's Wraith owner key, shared out-of-band — not a Stellar address."
+            hint="The recipient's Wraith owner key (shared privately), not a Stellar address."
           >
             <TextInput
               mono

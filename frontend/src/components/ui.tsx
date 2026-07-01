@@ -250,26 +250,11 @@ export function AssetAvatar({ code, className }: { code: AssetCode; className?: 
   )
 }
 
-export function PageIntro({
-  title,
-  subtitle,
-  eyebrow,
-}: {
-  title: string
-  subtitle: string
-  eyebrow?: string
-}) {
+export function PageIntro({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div>
-      {eyebrow && (
-        <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-spectral-dim">
-          {eyebrow}
-        </div>
-      )}
-      <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight text-zinc-100">
-        {title}
-      </h1>
-      <p className="mt-1.5 max-w-xl text-sm text-zinc-500">{subtitle}</p>
+      <h1 className="text-2xl font-semibold leading-tight tracking-tight text-zinc-100">{title}</h1>
+      <p className="mt-1.5 max-w-xl text-sm text-zinc-400">{subtitle}</p>
     </div>
   )
 }
@@ -286,11 +271,7 @@ export function SectionHeading({
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2.5">
-        {icon && (
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-spectral/15 text-spectral-soft">
-            {icon}
-          </span>
-        )}
+        {icon && <span className="text-zinc-500">{icon}</span>}
         <h2 className="panel-title">{title}</h2>
       </div>
       {hint && <span className="font-mono text-xs text-zinc-500">{hint}</span>}

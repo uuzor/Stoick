@@ -200,7 +200,7 @@ function EndpointPanel({
   return (
     <div className="rounded-2xl border border-ink-700 bg-ink-900/50 p-4">
       <div className="mb-3 flex items-center justify-between">
-        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500">{role}</span>
+        <span className="text-xs font-medium text-zinc-400">{role}</span>
         <div className="flex items-center gap-2">
           {wallet}
           <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-300">
@@ -420,7 +420,7 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
         <button
           type="button"
           onClick={evm.disconnect}
-          className="font-mono text-[11px] text-zinc-400 hover:text-zinc-200"
+          className="font-mono text-xs text-zinc-400 hover:text-zinc-200"
           title="Disconnect"
         >
           {truncateKey(evm.address, 4, 4)}
@@ -435,9 +435,8 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
     <div className={embedded ? 'space-y-5' : 'mx-auto max-w-xl space-y-6'}>
       {!embedded && (
         <PageIntro
-          eyebrow="Cross-chain"
           title="Bridge"
-          subtitle="Move assets into and out of the Wraith shielded pool. Trust-minimized — provenance is proven on-chain, not attested by a committee."
+          subtitle="Move assets into and out of the Wraith shielded pool, with provenance proven on-chain rather than attested by a committee."
         />
       )}
 

@@ -22,11 +22,11 @@ const mist = {
 }
 
 const halo = {
-  DEFAULT: '#D6C083',
-  soft: '#E6D6A4',
-  dim: '#AE9757',
-  glow: '#E9DBAE',
-  deep: '#7C6A3A',
+  DEFAULT: '#EDEBE6',
+  soft: '#F7F6F2',
+  dim: '#B6B3AC',
+  glow: '#F2F0EB',
+  deep: '#6E6B64',
 }
 
 // Warm the default grey text scale so existing `text-zinc-*` reads warm (fog),
@@ -80,10 +80,9 @@ export default {
         ],
       },
       boxShadow: {
-        // Warm + subtle: a hairline ring and a soft gold lift (replaces the
-        // cold purple glow / glassy panel).
-        glow: '0 0 0 1px rgba(214,192,131,0.22), 0 10px 40px -16px rgba(214,192,131,0.28)',
-        panel: '0 1px 0 0 rgba(233,228,213,0.03) inset, 0 24px 60px -34px rgba(0,0,0,0.85)',
+        // Tight and quiet — no colored glow, no wide diffuse "ghost card" shadow.
+        glow: '0 1px 2px 0 rgba(0,0,0,0.35)',
+        panel: '0 1px 2px 0 rgba(0,0,0,0.35)',
         hair: '0 0 0 1px rgba(59,56,45,0.9)',
       },
       keyframes: {

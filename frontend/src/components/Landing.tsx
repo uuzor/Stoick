@@ -48,28 +48,23 @@ export function Landing({ onEnter }: { onEnter: () => void }) {
 
       {/* Hero */}
       <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-6 text-center">
-        <div className="mb-5 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.32em] text-zinc-400">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-300" />
-          Full privacy on Stellar
-        </div>
-
         <h1
-          className="font-display text-6xl font-semibold tracking-tight text-zinc-100 sm:text-8xl"
-          style={{ textShadow: '0 0 40px rgba(240,240,240,0.28), 0 2px 22px rgba(0,0,0,0.65)' }}
+          className="font-display text-6xl font-semibold tracking-tight text-zinc-100 sm:text-7xl"
+          style={{ textShadow: '0 2px 24px rgba(0,0,0,0.7)' }}
         >
           WRAITH
         </h1>
 
-        <p className="mt-5 max-w-md text-sm leading-relaxed text-zinc-300/90">
-          Private by proof. Bridge, hold, pay and trade —{' '}
-          <span className="text-zinc-100">shielded, and verified on-chain.</span>
+        <p className="mt-6 max-w-md text-sm leading-relaxed text-zinc-300">
+          Bridge, hold, pay, and trade with shielded balances, verified on-chain by
+          zero-knowledge proofs.
         </p>
 
-        <button onClick={onEnter} className="btn btn-primary mt-9 px-9 text-sm tracking-wide">
+        <button onClick={onEnter} className="btn btn-primary mt-9 px-9 text-sm">
           Enter
         </button>
 
-        <div className="mt-4 font-mono text-[11px] text-zinc-600">testnet · UltraHonk + Signal</div>
+        <div className="mt-4 font-mono text-xs text-zinc-500">Stellar testnet</div>
       </div>
     </div>
   )

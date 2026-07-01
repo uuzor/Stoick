@@ -125,7 +125,7 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
   return (
     <div className={embedded ? 'space-y-5' : 'space-y-6'}>
       {!embedded && (
-        <PageIntro title="Swap" subtitle="Dark-pool DEX — orders stay sealed until matched. No front-running." />
+        <PageIntro title="Swap" subtitle="Dark-pool DEX. Orders stay sealed until matched, so there is no front-running." />
       )}
 
       <div className={embedded ? 'space-y-5' : 'grid gap-5 lg:grid-cols-5'}>
@@ -137,7 +137,7 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
           />
 
           <div className="mb-4 mt-3 flex items-center justify-between rounded-xl border border-ink-700 bg-ink-900/60 px-3.5 py-2.5">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">Mid price</span>
+            <span className="text-xs font-medium text-zinc-400">Mid price</span>
             <span className="font-mono text-sm text-zinc-200">
               {MID_PRICE.toFixed(4)} {PAIR.quote}
             </span>

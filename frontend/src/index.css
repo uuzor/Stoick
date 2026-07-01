@@ -17,8 +17,8 @@
        negative space. Cards sit cleanly on top of the texture. */
     background-image:
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E"),
-      radial-gradient(60rem 40rem at 50% -14rem, rgba(214, 192, 131, 0.1), transparent 60%),
-      radial-gradient(42rem 32rem at 86% 2rem, rgba(214, 192, 131, 0.05), transparent 58%);
+      radial-gradient(60rem 40rem at 50% -14rem, rgba(232, 230, 224, 0.07), transparent 60%),
+      radial-gradient(42rem 32rem at 86% 2rem, rgba(232, 230, 224, 0.04), transparent 58%);
     background-repeat: repeat, no-repeat, no-repeat;
     background-size: 140px 140px, auto, auto;
     background-blend-mode: overlay, normal, normal;
@@ -60,7 +60,7 @@
   }
 
   .label {
-    @apply mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500;
+    @apply mb-1.5 block text-xs font-medium text-zinc-400;
   }
 
   .input {
@@ -81,7 +81,7 @@
     @apply rounded-lg px-3 py-1.5 text-xs;
   }
   .btn-primary {
-    @apply bg-spectral text-mist-950 shadow-glow hover:bg-spectral-soft;
+    @apply bg-spectral text-mist-950 hover:bg-spectral-soft;
   }
   .btn-outline {
     @apply border border-ink-600 bg-ink-800/50 text-zinc-200 hover:border-spectral/50 hover:text-zinc-100;

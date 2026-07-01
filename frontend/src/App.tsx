@@ -17,15 +17,17 @@ function AppRoute() {
       {/* Ambient light-pillar backdrop — black & white, subtle, behind the wallet. */}
       <div className="pointer-events-none fixed inset-0 -z-10" style={{ opacity: 0.42 }}>
         <LightPillar
-          topColor="#E8E8E6"
-          bottomColor="#3C3C3A"
-          intensity={1.0}
-          rotationSpeed={0.3}
+          topColor="#000000"
+          bottomColor="#797572"
+          intensity={1.5}
+          rotationSpeed={0.2}
           glowAmount={0.005}
-          pillarWidth={3.0}
-          pillarHeight={0.4}
-          noiseIntensity={0.5}
-          mixBlendMode="screen"
+          pillarWidth={2}
+          pillarHeight={0.3}
+          noiseIntensity={2}
+          pillarRotation={270}
+          interactive={false}
+          mixBlendMode="lighten"
           quality="medium"
         />
       </div>

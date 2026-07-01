@@ -4,8 +4,8 @@ import { hash2 } from '@wraith/sdk'
 import { useWraith } from '../hooks/useWraith'
 import { getSpendingKey } from '../lib/note-store'
 import { ASSETS } from '../lib/assets'
-import { formatUsd, truncateKey } from '../lib/format'
-import { AssetAvatar, Badge, CopyIcon, GhostMark } from './ui'
+import { formatUsd } from '../lib/format'
+import { AssetAvatar, CopyIcon, GhostMark } from './ui'
 import { ConnectWallet } from './ConnectWallet'
 import { Sheet } from './Sheet'
 import { Bridge } from './Bridge'
@@ -14,11 +14,10 @@ import { Swap } from './Swap'
 
 // --- action icons -----------------------------------------------------------
 
-function BridgeGlyph(props: SVGProps<SVGSVGElement>) {
+function PlusGlyph(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
-      <path d="M3 10h18M6 10v8m12-8v8M3 18h18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M3 10c0-3 3.5-4 9-4s9 1 9 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
 }
@@ -102,7 +101,7 @@ function Receive({ ownerKeyHex }: { ownerKeyHex: string }) {
         <span className="break-all font-mono text-xs text-zinc-300">{ownerKeyHex}</span>
         <CopyIcon className="ml-auto h-4 w-4 shrink-0 text-zinc-500" />
       </button>
-      {copied && <p className="text-center text-[11px] text-emerald-400">Copied to clipboard</p>}
+      {copied && <p className="text-center text-xs text-emerald-400">Copied to clipboard</p>}
     </div>
   )
 }
@@ -136,32 +135,17 @@ export function Wallet() {
     <div className="mx-auto w-full max-w-[460px] px-4 py-6">
       {/* Header — shielded identity */}
       <header className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <GhostMark className="h-7 w-7 text-spectral" />
-          <div className="leading-tight">
-            <div className="font-display text-sm font-semibold tracking-tight text-zinc-100">Wraith</div>
-            <div className="font-mono text-[11px] text-zinc-500">shielded · {truncateKey(ownerKeyHex, 4, 4)}</div>
-          </div>
-          <Badge tone="accent" className="ml-1 hidden sm:inline-flex">Testnet</Badge>
-          <button
-            type="button"
-            onClick={() => setSheet('bridge')}
-            aria-label="Add funds"
-            title="Add funds"
-            className="ml-1 flex h-7 w-7 items-center justify-center rounded-lg border border-ink-700 bg-ink-850 text-zinc-400 transition hover:border-spectral/50 hover:text-spectral-soft"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none">
-              <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-          </button>
+        <div className="flex items-center gap-2 rounded-full border border-ink-700 bg-ink-900/50 px-3 py-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-zinc-300" />
+          <span className="text-xs font-medium text-zinc-300">Stellar Testnet</span>
         </div>
         <ConnectWallet />
       </header>
 
       {/* Balance */}
-      <section className="rounded-3xl border border-ink-700 bg-ink-850/70 p-6 text-center shadow-panel">
+      <section className="rounded-2xl border border-ink-700 bg-ink-850/70 p-6 text-center shadow-panel">
         <div className="flex items-center justify-center gap-2">
-          <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">Shielded balance</span>
+          <span className="text-xs font-medium text-zinc-400">Shielded balance</span>
           <button
             type="button"
             onClick={() => setRevealed((v) => !v)}
@@ -178,7 +162,7 @@ export function Wallet() {
 
         {/* Actions */}
         <div className="mt-6 flex items-center justify-center gap-5">
-          <ActionButton label="Deposit" icon={<BridgeGlyph className="h-5 w-5" />} onClick={() => setSheet('bridge')} />
+          <ActionButton label="Deposit" icon={<PlusGlyph className="h-5 w-5" />} onClick={() => setSheet('bridge')} />
           <ActionButton label="Send" icon={<SendGlyph className="h-5 w-5" />} onClick={() => setSheet('send')} />
           <ActionButton label="Swap" icon={<SwapGlyph className="h-5 w-5" />} onClick={() => setSheet('swap')} />
           <ActionButton label="Receive" icon={<ReceiveGlyph className="h-5 w-5" />} onClick={() => setSheet('receive')} />
@@ -187,7 +171,7 @@ export function Wallet() {
 
       {/* Assets */}
       <section className="mt-6">
-        <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500">Assets</div>
+        <div className="mb-2 px-1 text-xs font-medium text-zinc-400">Assets</div>
         {loadingBalances ? (
           <div className="space-y-2">
             {[0, 1].map((i) => (
@@ -215,11 +199,11 @@ export function Wallet() {
                 <AssetAvatar code={b.asset} className="h-9 w-9" />
                 <div className="min-w-0">
                   <div className="text-sm font-semibold tracking-tight text-zinc-100">{b.asset}</div>
-                  <div className="truncate text-[11px] text-zinc-500">{ASSETS[b.asset].name}</div>
+                  <div className="truncate text-xs text-zinc-400">{ASSETS[b.asset].name}</div>
                 </div>
                 <div className="ml-auto text-right">
                   <div className="font-mono text-sm tabular-nums text-zinc-100">{revealed ? b.amount : HIDDEN}</div>
-                  <div className="text-[11px] text-zinc-500">{revealed ? `≈ ${formatUsd(b.usdEstimate)}` : ''}</div>
+                  <div className="text-xs text-zinc-400">{revealed ? `≈ ${formatUsd(b.usdEstimate)}` : ''}</div>
                 </div>
               </div>
             ))}
