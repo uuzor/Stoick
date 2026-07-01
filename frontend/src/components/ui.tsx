@@ -250,11 +250,26 @@ export function AssetAvatar({ code, className }: { code: AssetCode; className?: 
   )
 }
 
-export function PageIntro({ title, subtitle }: { title: string; subtitle: string }) {
+export function PageIntro({
+  title,
+  subtitle,
+  eyebrow,
+}: {
+  title: string
+  subtitle: string
+  eyebrow?: string
+}) {
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-white">{title}</h1>
-      <p className="mt-1 text-sm text-zinc-500">{subtitle}</p>
+      {eyebrow && (
+        <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-spectral-dim">
+          {eyebrow}
+        </div>
+      )}
+      <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight text-zinc-100">
+        {title}
+      </h1>
+      <p className="mt-1.5 max-w-xl text-sm text-zinc-500">{subtitle}</p>
     </div>
   )
 }
@@ -312,7 +327,7 @@ export function ToggleGroup<T extends string>({
               'rounded-lg py-2 text-sm font-semibold transition',
               active
                 ? (option.activeClassName ??
-                    'bg-spectral/15 text-white shadow-[inset_0_0_0_1px_rgba(124,108,255,0.4)]')
+                    'bg-spectral/15 text-zinc-100 shadow-[inset_0_0_0_1px_rgba(214,192,131,0.4)]')
                 : 'text-zinc-400 hover:text-zinc-200',
             )}
           >

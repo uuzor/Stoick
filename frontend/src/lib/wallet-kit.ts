@@ -3,19 +3,23 @@
  *
  * A SINGLE kit instance powers both the Connect button (via `useWallet`) and the
  * live signing path (`real-sdk.ts`), so the selected wallet stays consistent across
- * the app. It supports every SEP-43 wallet shipped by the kit's `allowAllModules()`
- * — Freighter, xBull, Albedo, Rabet, Lobstr, Hana, HOT Wallet, Klever — without any
- * per-wallet wiring.
+ * the app.
  *
- * Wallets that need extra configuration are intentionally NOT enabled here: Ledger
- * and Trezor (hardware, pull in `@stellar/stellar-base`) and WalletConnect (needs a
- * `projectId`). Register their modules explicitly if/when those are required.
+ * We register only the **Testnet-capable** SEP-43 wallets — Freighter, xBull, Albedo,
+ * Rabet. `allowAllModules()` also probes mainnet-only wallets (Lobstr, HOT, Klever)
+ * whose on-load availability checks slow the connect probe (the "keeps connecting"
+ * symptom) and which cannot sign on Stellar Testnet anyway. Hardware (Ledger/Trezor)
+ * and WalletConnect (needs a `projectId`) are likewise omitted; add their modules
+ * if/when those are required.
  */
 import {
-  allowAllModules,
+  AlbedoModule,
   FREIGHTER_ID,
+  FreighterModule,
+  RabetModule,
   StellarWalletsKit,
   WalletNetwork,
+  xBullModule,
 } from '@creit.tech/stellar-wallets-kit'
 import { NETWORK_PASSPHRASE } from './config'
 
@@ -56,7 +60,7 @@ export function clearStoredWalletId(): void {
 export const kit: StellarWalletsKit = new StellarWalletsKit({
   network: WalletNetwork.TESTNET,
   selectedWalletId: readStoredWalletId() ?? FREIGHTER_ID,
-  modules: allowAllModules(),
+  modules: [new FreighterModule(), new xBullModule(), new AlbedoModule(), new RabetModule()],
 })
 
 export { FREIGHTER_ID, WalletNetwork }

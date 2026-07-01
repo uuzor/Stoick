@@ -83,7 +83,10 @@ export function ConnectWallet() {
     )
   }
 
-  const busy = wallet.status === 'connecting' || wallet.status === 'checking'
+  // Only a user-initiated connect shows "Connecting…". The initial silent probe
+  // ('checking') must NOT render as busy, or the button looks like it's stuck
+  // trying to connect on every load.
+  const busy = wallet.status === 'connecting'
   return (
     <div className="flex items-center gap-3">
       {wallet.error && wallet.status === 'disconnected' && (

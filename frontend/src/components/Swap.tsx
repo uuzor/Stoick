@@ -80,7 +80,7 @@ function OrderSkeleton() {
   )
 }
 
-export function Swap() {
+export function Swap({ embedded }: { embedded?: boolean } = {}) {
   const { sdk, orders, loadingOrders, refreshOrders, refreshBalances } = useWraith()
   const proof = useProofFlow()
 
@@ -123,10 +123,12 @@ export function Swap() {
   }
 
   return (
-    <div className="space-y-6">
-      <PageIntro title="Swap" subtitle="Dark-pool DEX — orders stay sealed until matched. No front-running." />
+    <div className={embedded ? 'space-y-5' : 'space-y-6'}>
+      {!embedded && (
+        <PageIntro title="Swap" subtitle="Dark-pool DEX — orders stay sealed until matched. No front-running." />
+      )}
 
-      <div className="grid gap-5 lg:grid-cols-5">
+      <div className={embedded ? 'space-y-5' : 'grid gap-5 lg:grid-cols-5'}>
         <Card className="p-6 lg:col-span-2">
           <SectionHeading
             icon={<ChartIcon className="h-4 w-4" />}
