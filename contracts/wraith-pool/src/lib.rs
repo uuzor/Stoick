@@ -185,7 +185,18 @@ impl WraithPool {
     /// SHARED.md §7 — `transfer` public inputs, in declared order:
     ///   [0] merkle_root [1] nullifier_0 [2] nullifier_1
     ///   [3] out_commitment_0 [4] out_commitment_1 [5] ext_data_hash
-    pub fn transfer(env: Env, proof: Bytes, public_inputs: Bytes) -> Result<(), WraithError> {
+    ///
+    /// `memos` are opaque, per-output encrypted note payloads (sealed to the output owner's
+    /// viewing key), aligned with the two output commitments. The contract treats them as
+    /// untrusted transport and just re-emits them in `TransferEvent`; a recipient scans
+    /// those events, trial-decrypts, and only accepts a note whose commitment matches an
+    /// emitted output — so a forged/tampered memo can never mint balance (note discovery).
+    pub fn transfer(
+        env: Env,
+        proof: Bytes,
+        public_inputs: Bytes,
+        memos: Vec<Bytes>,
+    ) -> Result<(), WraithError> {
         let f = parse_fields(&env, &public_inputs, 6)?;
         let root = f.get(0).unwrap();
         let nullifier_0 = f.get(1).unwrap();
@@ -206,8 +217,8 @@ impl WraithPool {
 
         mark_spent(&env, &nullifier_0);
         mark_spent(&env, &nullifier_1);
-        merkle::insert(&env, &out_commitment_0);
-        merkle::insert(&env, &out_commitment_1);
+        let index_0 = merkle::insert(&env, &out_commitment_0);
+        let index_1 = merkle::insert(&env, &out_commitment_1);
 
         let mut nullifiers = Vec::new(&env);
         nullifiers.push_back(nullifier_0);
@@ -215,9 +226,14 @@ impl WraithPool {
         let mut commitments = Vec::new(&env);
         commitments.push_back(out_commitment_0);
         commitments.push_back(out_commitment_1);
+        let mut indices = Vec::new(&env);
+        indices.push_back(index_0);
+        indices.push_back(index_1);
         TransferEvent {
             nullifiers,
             commitments,
+            indices,
+            memos,
         }
         .publish(&env);
         Ok(())

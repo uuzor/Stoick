@@ -379,13 +379,14 @@ fn transfer_consumes_two_nullifiers_and_inserts_two_notes() {
     let (nf0, nf1, out0, out1) = (f(env, 0x31), f(env, 0x32), f(env, 0xD0), f(env, 0xD1));
     let pi = pub_inputs(env, &[root, nf0.clone(), nf1.clone(), out0, out1, f(env, 0xE0)]);
 
-    c.transfer(&proof(env), &pi);
+    let memos = soroban_sdk::Vec::<soroban_sdk::Bytes>::new(env);
+    c.transfer(&proof(env), &pi, &memos);
     assert!(c.is_spent(&nf0));
     assert!(c.is_spent(&nf1));
 
     // replay rejected (nullifiers spent)
     assert_eq!(
-        c.try_transfer(&proof(env), &pi),
+        c.try_transfer(&proof(env), &pi, &memos),
         Err(Ok(WraithError::NullifierUsed))
     );
 }
@@ -399,8 +400,9 @@ fn transfer_rejects_duplicate_nullifiers() {
     let root = c.get_last_root();
     let nf = f(env, 0x55);
     let pi = pub_inputs(env, &[root, nf.clone(), nf, f(env, 0xD0), f(env, 0xD1), f(env, 0xE0)]);
+    let memos = soroban_sdk::Vec::<soroban_sdk::Bytes>::new(env);
     assert_eq!(
-        c.try_transfer(&proof(env), &pi),
+        c.try_transfer(&proof(env), &pi, &memos),
         Err(Ok(WraithError::DuplicateNullifier))
     );
 }

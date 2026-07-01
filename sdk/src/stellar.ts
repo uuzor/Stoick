@@ -172,10 +172,20 @@ export class WraithContract {
     );
   }
 
-  /** transfer(proof, public_inputs). SPEC sec 9.1. */
-  transferOp(args: { proof: Uint8Array; publicInputs: Uint8Array }): xdr.Operation {
+  /**
+   * transfer(proof, public_inputs, memos). SPEC sec 9.1.
+   * `memos` are opaque encrypted note payloads (sealed to each output owner's viewing
+   * key), aligned with the two output commitments; the contract re-emits them in
+   * `TransferEvent` for recipient note discovery. Defaults to empty.
+   */
+  transferOp(args: {
+    proof: Uint8Array;
+    publicInputs: Uint8Array;
+    memos?: Uint8Array[];
+  }): xdr.Operation {
     this.assertProofLen(args.proof);
-    return this.contract.call("transfer", scvBytes(args.proof), scvBytes(args.publicInputs));
+    const memos = xdr.ScVal.scvVec((args.memos ?? []).map(scvBytes));
+    return this.contract.call("transfer", scvBytes(args.proof), scvBytes(args.publicInputs), memos);
   }
 
   /** place_order(proof, public_inputs). SPEC sec 9.1. */

@@ -6,6 +6,12 @@
   "toolchain": { "nargo": "1.0.0-beta.9", "bb": "0.87.0", "soroban-sdk": "26.0.1", "stellar-cli": "27.0.0" },
   "contracts": {
     "wraithPool": "CD7EF4GG32IPVS2PGD2LMXEO3TPEWBZRUCBBSPXQ236CD6TMF5S4UUZR",
+    "wraithPoolMemo": {
+      "note": "Memo-enabled pool (2026-07-01): transfer emits an encrypted note payload in TransferEvent for recipient note-discovery. Reuses the verifiers below. This is the pool the frontend now targets.",
+      "contract": "CBVM7B622FSW47FDNUVU7GEU7TNRVRWEVOTNAUWVUOHFMIPSTDL2YVNG",
+      "wasmHash": "9f8fc87159dff0c04b18011e1b83c3996ddaa174ae96bdcd7edf5a0dc7973bdc",
+      "deployer": "GCMLVYL34B7ZQ5C7D7QUGIBLQ45ACTBJT6QJO4Z36AMJ4OQ6TXSSWVGK"
+    },
     "verifiers": {
       "withdraw": "CBKB3P72CTZAGODIKMQRLUJ2INHQULK5J66N6QQR7GCHGDUFCTUPJ6M3",
       "transfer": "CBXOZGAWSLJEXVMHY6WMBDLAJWDESUPOJV2TEAK6F77IYD7EVRDINS6I",
