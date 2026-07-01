@@ -31,13 +31,7 @@ import {
   type Field,
 } from '@wraith/sdk'
 import { rpc, scValToNative, TransactionBuilder, xdr } from '@stellar/stellar-sdk'
-import {
-  ASSET_CONFIG,
-  ENABLE_WITHDRAW,
-  NETWORK_PASSPHRASE,
-  POOL_CONTRACT_ID,
-  SOROBAN_RPC_URL,
-} from './config'
+import { ASSET_CONFIG, NETWORK_PASSPHRASE, POOL_CONTRACT_ID, SOROBAN_RPC_URL } from './config'
 import { getKitAddress, signWithKit } from './wallet-kit'
 import { formatAmount } from './format'
 import {
@@ -302,24 +296,28 @@ export class RealWraithSdk implements WraithSdk {
     return []
   }
 
-  // --- Bridge: withdraw (EXPERIMENTAL, in-browser proof) ---
+  // --- Withdraw to a classic Stellar account (LIVE, in-browser ZK proof) ---
 
   async withdraw({ asset, amount, recipient }: WithdrawParams): Promise<TxResult> {
-    if (!ENABLE_WITHDRAW) {
-      throw new Error(
-        'Withdraw is experimental and currently disabled. Set VITE_ENABLE_WITHDRAW=true to enable in-browser ZK proving (heavy: loads Noir + Barretenberg WASM).',
-      )
-    }
     const cfg = ASSET_CONFIG[asset]
     if (!cfg.sac) throw new Error(`${asset} is not configured for this deployment.`)
 
     const amountBase = toBaseUnits(amount, cfg.decimals)
-    const candidate = loadNotes().find(
+    // The withdraw circuit releases a full note (`note_amount == amount`, no change), so
+    // the amount must equal one of the wallet's notes exactly. Prefer a note that already
+    // has a captured Merkle witness.
+    const matches = loadNotes().filter(
       (n) => !n.spent && n.assetCode === asset && BigInt(n.amount) === amountBase && n.leafIndex !== undefined,
     )
+    const candidate = matches.find((n) => n.merklePath && n.merkleRoot) ?? matches[0]
     if (!candidate) {
+      const available = loadNotes()
+        .filter((n) => !n.spent && n.assetCode === asset && n.leafIndex !== undefined)
+        .map((n) => formatAmount(baseUnitsToNumber(BigInt(n.amount), cfg.decimals)))
       throw new Error(
-        'No shielded note of exactly this amount is available. The experimental withdraw consumes one full note (no change output).',
+        available.length
+          ? `Withdraw sends one full shielded note. Available ${asset} notes: ${available.join(', ')} — withdraw one of those amounts.`
+          : `No shielded ${asset} note is available to withdraw.`,
       )
     }
     const note = toBalanceNote(candidate)
@@ -347,6 +345,9 @@ export class RealWraithSdk implements WraithSdk {
     let proof
     try {
       proof = await prover.prove(inputs)
+      if (!(await prover.verify(proof))) {
+        throw new Error('Local proof verification failed — aborting before submit.')
+      }
     } finally {
       await prover.destroy().catch(() => undefined)
     }

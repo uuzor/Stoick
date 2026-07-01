@@ -52,12 +52,6 @@ export const NETWORK_PASSPHRASE = env('VITE_NETWORK_PASSPHRASE', 'Test SDF Netwo
 /** When true, the app uses the offline `MockWraithSdk` instead of the live client. */
 export const USE_MOCK = flag('VITE_USE_MOCK')
 
-/**
- * When true, the experimental in-browser withdraw prover is enabled (heavy: pulls
- * `@noir-lang/noir_js` + `@aztec/bb.js` WASM and fetches a CRS). Off by default.
- */
-export const ENABLE_WITHDRAW = flag('VITE_ENABLE_WITHDRAW')
-
 /** Optional USDC SAC address — not part of the single-asset testnet demo. */
 export const USDC_SAC = env('VITE_USDC_SAC', '')
 

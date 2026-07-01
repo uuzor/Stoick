@@ -3,13 +3,13 @@ import type { ReactNode } from 'react'
 import { useWraith } from '../hooks/useWraith'
 import { useEvmWallet } from '../hooks/useEvmWallet'
 import { useWallet } from '../hooks/useWallet'
-import { addNote, getSpendingKey, loadNotes, markSpent } from '../lib/note-store'
-import { toBaseUnits } from '../lib/real-sdk'
+import { addNote, getSpendingKey, loadNotes, markSpent, type StoredNote } from '../lib/note-store'
+import { baseUnitsToNumber, toBaseUnits } from '../lib/real-sdk'
 import { ASSET_CODES, BRIDGED_ASSET_CODES } from '../lib/assets'
-import { isPositiveAmount, isValidStellarAddress, truncateKey } from '../lib/format'
+import { formatAmount, isPositiveAmount, isValidStellarAddress, truncateKey } from '../lib/format'
 import type { AssetCode } from '../lib/wraith-sdk'
 import {
-  ENABLE_WITHDRAW,
+  ASSET_CONFIG,
   ETH_LIGHT_CLIENT_ID,
   L1_BRIDGE_ADDRESS,
   USE_MOCK,
@@ -96,6 +96,11 @@ const MAX_U64 = 1n << 64n
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 const isEvmAddress = (s: string) => /^0x[0-9a-fA-F]{40}$/.test(s.trim())
 const stellarTxUrl = (hash: string) => `https://stellar.expert/explorer/testnet/tx/${hash}`
+
+/** A stored note's amount as a human string (base units -> decimal). */
+function noteHuman(n: StoredNote): string {
+  return formatAmount(baseUnitsToNumber(BigInt(n.amount), ASSET_CONFIG[n.assetCode].decimals))
+}
 
 async function pollUntil(
   fn: () => Promise<boolean>,
@@ -333,7 +338,7 @@ function TokenChip({ code }: { code: string }) {
 // ---------------------------------------------------------------------------
 
 export function Bridge({ embedded }: { embedded?: boolean } = {}) {
-  const { sdk, balances, refreshBalances, identityReady } = useWraith()
+  const { sdk, refreshBalances, identityReady } = useWraith()
   const evm = useEvmWallet()
   const stellar = useWallet()
 
@@ -344,12 +349,17 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
 
   const ethToken = BRIDGE_TOKENS.ETH
 
-  // Shielded balances that can be withdrawn back to the selected chain.
-  const withdrawBalances = balances.filter((b) => WITHDRAW_CODES[l1].includes(b.asset))
-  const [outAsset, setOutAsset] = useState<AssetCode | ''>('')
-  const withdrawAsset = (outAsset && withdrawBalances.some((b) => b.asset === outAsset)
-    ? outAsset
-    : withdrawBalances[0]?.asset ?? '') as AssetCode | ''
+  // Withdraw operates on individual notes (the circuit releases a full note, no change),
+  // so the user picks a note rather than typing an amount.
+  const [withdrawNote, setWithdrawNote] = useState('') // selected note commitment
+  const withdrawableNotes =
+    direction === 'withdraw'
+      ? loadNotes().filter(
+          (n) => !n.spent && WITHDRAW_CODES[l1].includes(n.assetCode) && n.leafIndex !== undefined,
+        )
+      : []
+  const selectedNote = withdrawableNotes.find((n) => n.commitment === withdrawNote) ?? withdrawableNotes[0] ?? null
+  const withdrawAmountHuman = selectedNote ? noteHuman(selectedNote) : ''
 
   const [amount, setAmount] = useState('')
   const [recipient, setRecipient] = useState('') // withdraw only: L1 destination
@@ -366,11 +376,11 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
   const amountValid = isPositiveAmount(amount)
 
   // Token codes shown in the From / To panels.
-  const fromCode = direction === 'deposit' ? L1_TOKEN[l1] : withdrawAsset || '—'
+  const fromCode = direction === 'deposit' ? L1_TOKEN[l1] : selectedNote?.assetCode ?? '—'
   const toCode = direction === 'deposit'
     ? DEPOSIT_SHIELDED[l1]
-    : withdrawAsset
-      ? L1_TOKEN_FOR[withdrawAsset]
+    : selectedNote
+      ? L1_TOKEN_FOR[selectedNote.assetCode]
       : L1_TOKEN[l1]
 
   const steps = STEP_LABELS[`${direction}:${l1}`]
@@ -385,16 +395,24 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
     setRecipient('')
   }
 
+  // Withdraw defaults to the connected wallet's own Stellar account.
+  function defaultRecipient(dir: Direction, chain: L1): string {
+    return dir === 'withdraw' && chain === 'stellar' && stellar.address ? stellar.address : ''
+  }
+
   function selectChain(next: L1) {
     if (running || next === l1) return
     setL1(next)
     reset()
+    setRecipient(defaultRecipient(direction, next))
   }
 
   function flip() {
     if (running) return
-    setDirection((d) => (d === 'deposit' ? 'withdraw' : 'deposit'))
+    const next: Direction = direction === 'deposit' ? 'withdraw' : 'deposit'
+    setDirection(next)
     reset()
+    setRecipient(defaultRecipient(next, l1))
   }
 
   const creditBridgeNote = useCallback(
@@ -474,48 +492,34 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
     await creditBridgeNote(note)
   }
 
-  /** Wraith → Stellar: an in-browser ZK withdraw to a classic Stellar account. */
+  /** Wraith → Stellar: an in-browser ZK withdraw of one note to a classic Stellar account. */
   async function runStellarOut() {
-    if (!withdrawAsset) throw new Error('No shielded balance to withdraw.')
+    if (!selectedNote) throw new Error('No shielded note to withdraw.')
     setStep(0)
-    const { hash } = await sdk.withdraw({ asset: withdrawAsset, amount, recipient })
+    const { hash } = await sdk.withdraw({
+      asset: selectedNote.assetCode,
+      amount: noteHuman(selectedNote),
+      recipient,
+    })
     setStellarHash(hash)
     setStep(1)
     await refreshBalances()
   }
 
-  function debitBridgeNotes(code: AssetCode, amt: string) {
-    if (USE_MOCK) {
-      void sdk.withdraw({ asset: code, amount: amt, recipient })
-      return
-    }
-    let remaining = (() => {
-      try {
-        return toBaseUnits(amt, code === 'bETH' ? 18 : 6)
-      } catch {
-        return 0n
-      }
-    })()
-    for (const n of loadNotes()) {
-      if (n.spent || n.assetCode !== code) continue
-      markSpent(n.commitment)
-      remaining -= BigInt(n.amount)
-      if (remaining <= 0n) break
-    }
-  }
-
-  /** Wraith → Ethereum: burn the shielded note, unlock the L1 backing (preview). */
+  /** Wraith → Ethereum: burn the selected note, unlock the L1 backing (preview). */
   async function runEthOut() {
     if (!USE_MOCK_BRIDGE) {
       throw new Error(
-        'Live bridge-out needs the in-browser withdraw prover (VITE_ENABLE_WITHDRAW). Run with VITE_USE_MOCK_BRIDGE=true to preview the burn → unlock flow.',
+        'Live bridge-out needs the in-browser withdraw prover. Run with VITE_USE_MOCK_BRIDGE=true to preview the burn → unlock flow.',
       )
     }
+    if (!selectedNote) throw new Error('No shielded note to withdraw.')
     await wait(1100); setStep(1)
     await wait(1000); setStep(2)
     await wait(1100); setStep(3)
     await wait(900)
-    debitBridgeNotes(withdrawAsset as AssetCode, amount)
+    if (USE_MOCK) await sdk.withdraw({ asset: selectedNote.assetCode, amount: noteHuman(selectedNote), recipient })
+    else markSpent(selectedNote.commitment)
     await refreshBalances()
   }
 
@@ -557,8 +561,7 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
       return { label: 'Deposit', onClick: () => void run() }
     }
     // withdraw
-    if (withdrawBalances.length === 0) return { label: 'No shielded balance', onClick: () => {}, disabled: true }
-    if (!amountValid) return { label: 'Enter an amount', onClick: () => {}, disabled: true }
+    if (!selectedNote) return { label: 'No shielded note to withdraw', onClick: () => {}, disabled: true }
     const okRecipient = l1 === 'stellar' ? isValidStellarAddress(recipient) : isEvmAddress(recipient)
     if (!okRecipient) return { label: 'Enter recipient address', onClick: () => {}, disabled: true }
     return { label: 'Withdraw', onClick: () => void run() }
@@ -590,13 +593,11 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
       <ChainSelect value={l1} onChange={selectChain} disabled={running} />
     )
 
-  // Experimental notices (withdraw paths are gated on the ZK prover).
-  const withdrawGated =
-    direction === 'withdraw' &&
-    (l1 === 'stellar' ? !USE_MOCK && !ENABLE_WITHDRAW : !USE_MOCK_BRIDGE)
+  // Stellar withdraw is live (real in-browser ZK proof). Only the Ethereum bridge-out
+  // still needs the mock (its L1 unlock isn't wired yet).
+  const withdrawGated = direction === 'withdraw' && l1 === 'ethereum' && !USE_MOCK_BRIDGE
 
   const showTracker = status !== 'idle'
-  const withdrawFromBalance = withdrawBalances.find((b) => b.asset === withdrawAsset)?.amount ?? '0'
 
   function stepDetail(i: number): ReactNode {
     if (direction === 'deposit' && l1 === 'ethereum' && i === 0 && l1Hash) {
@@ -630,44 +631,49 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
       <Card className="p-5">
         {/* From */}
         <EndpointPanel role="From" identity={fromIdentity} wallet={evmWalletChip}>
-          <div className="flex items-center gap-3">
-            <input
-              className="input input-mono flex-1 border-none bg-transparent px-0 text-2xl focus:ring-0"
-              inputMode="decimal"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              disabled={running}
-            />
-            {direction === 'withdraw' && withdrawBalances.length > 0 ? (
-              <div className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-ink-700 bg-ink-850 px-2.5 py-2">
-                <CoinBadge name={withdrawAsset || '—'} size="sm" />
-                <select
-                  className="cursor-pointer appearance-none bg-transparent text-sm font-semibold text-zinc-100 focus:outline-none"
-                  value={withdrawAsset}
-                  onChange={(e) => setOutAsset(e.target.value as AssetCode)}
-                  disabled={running}
-                >
-                  {withdrawBalances.map((b) => (
-                    <option key={b.asset} value={b.asset} className="bg-ink-850">
-                      {b.asset}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : (
+          {direction === 'deposit' ? (
+            <div className="flex items-center gap-3">
+              <input
+                className="input input-mono flex-1 border-none bg-transparent px-0 text-2xl focus:ring-0"
+                inputMode="decimal"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                disabled={running}
+              />
               <TokenChip code={String(fromCode)} />
-            )}
-          </div>
-          {direction === 'withdraw' && withdrawAsset && (
-            <button
-              type="button"
-              className="mt-2 text-xs text-zinc-500 hover:text-spectral-soft"
-              onClick={() => setAmount(withdrawFromBalance)}
-              disabled={running}
-            >
-              Balance: <span className="font-mono">{withdrawFromBalance}</span> · Max
-            </button>
+            </div>
+          ) : withdrawableNotes.length > 0 ? (
+            <>
+              <div className="flex items-center gap-3">
+                <div className="input input-mono flex-1 border-none bg-transparent px-0 text-2xl text-zinc-100">
+                  {withdrawAmountHuman || '0.00'}
+                </div>
+                <div className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-ink-700 bg-ink-850 px-2.5 py-2">
+                  <CoinBadge name={selectedNote?.assetCode ?? '—'} size="sm" />
+                  <select
+                    className="cursor-pointer appearance-none bg-transparent text-sm font-semibold text-zinc-100 focus:outline-none"
+                    value={selectedNote?.commitment ?? ''}
+                    onChange={(e) => setWithdrawNote(e.target.value)}
+                    disabled={running}
+                  >
+                    {withdrawableNotes.map((n) => (
+                      <option key={n.commitment} value={n.commitment} className="bg-ink-850">
+                        {noteHuman(n)} {n.assetCode}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="mt-2 text-xs text-zinc-500">
+                Withdraw sends one full shielded note · {withdrawableNotes.length} available
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="input input-mono flex-1 border-none bg-transparent px-0 text-2xl text-zinc-600">0.00</div>
+              <TokenChip code="—" />
+            </div>
           )}
         </EndpointPanel>
 
@@ -690,7 +696,7 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
         <EndpointPanel role="To" identity={toIdentity}>
           <div className="flex items-center gap-3">
             <div className="input input-mono flex-1 border-none bg-transparent px-0 text-2xl text-zinc-400">
-              {amountValid ? amount : '0.00'}
+              {direction === 'withdraw' ? withdrawAmountHuman || '0.00' : amountValid ? amount : '0.00'}
             </div>
             <TokenChip code={String(toCode)} />
           </div>
@@ -714,12 +720,11 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
           </p>
         )}
 
-        {/* Withdraw is gated on the in-browser ZK prover */}
+        {/* Ethereum bridge-out still needs the mock (L1 unlock not wired) */}
         {withdrawGated && (
           <p className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-300">
-            {l1 === 'stellar'
-              ? 'Withdraw runs an in-browser ZK proof (experimental). Enable it with VITE_ENABLE_WITHDRAW=true.'
-              : 'Bridge-out reuses the withdraw prover (experimental). Preview the burn → unlock flow with VITE_USE_MOCK_BRIDGE=true.'}
+            Bridge-out to Ethereum isn’t wired for the L1 unlock yet. Preview the burn → unlock flow with{' '}
+            <span className="font-mono">VITE_USE_MOCK_BRIDGE=true</span>.
           </p>
         )}
 
