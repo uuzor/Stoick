@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode, SVGProps } from 'react'
-import { hash2 } from '@wraith/sdk'
+import { deriveOwnerKey, fieldToHex } from '@wraith/sdk'
 import { useWraith } from '../hooks/useWraith'
 import { getSpendingKey } from '../lib/note-store'
 import { ASSETS } from '../lib/assets'
@@ -117,9 +117,9 @@ export function Wallet() {
 
   const ownerKeyHex = useMemo(() => {
     try {
-      const key = hash2(getSpendingKey(), 0)
-      return `0x${(key as unknown as bigint).toString(16).padStart(64, '0')}`
-    } catch {
+      return fieldToHex(deriveOwnerKey(getSpendingKey()))
+    } catch (err) {
+      console.error('owner key derivation failed', err)
       return '0x…'
     }
   }, [])

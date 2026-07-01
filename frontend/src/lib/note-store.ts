@@ -64,14 +64,19 @@ function write(key: string, value: unknown): void {
 export function getSpendingKey(): Field {
   const ls = safeLocalStorage()
   const existing = ls?.getItem(KEY_SPENDING)
-  if (existing) return hexToField(existing)
+  if (existing) {
+    // Tolerate both raw hex and JSON-quoted values (older builds persisted via write(),
+    // which JSON.stringify'd the hex — reading that back into BigInt() would throw).
+    const hex = existing.startsWith('"') ? (JSON.parse(existing) as string) : existing
+    return hexToField(hex)
+  }
   // Generate a fresh 32-byte secret via the platform CSPRNG.
   const buf = new Uint8Array(32)
   globalThis.crypto.getRandomValues(buf)
   let hex = '0x'
   for (const b of buf) hex += b.toString(16).padStart(2, '0')
   const key = hexToField(hex)
-  write(KEY_SPENDING, fieldToHex(key))
+  ls?.setItem(KEY_SPENDING, fieldToHex(key)) // store RAW hex; read directly above
   return key
 }
 
