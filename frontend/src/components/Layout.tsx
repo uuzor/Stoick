@@ -53,7 +53,9 @@ export function Layout({ children }: { children: ReactNode }) {
       <footer className="border-t border-ink-800/70">
         <div className="mx-auto flex max-w-5xl flex-col items-start justify-between gap-1 px-5 py-5 text-xs text-zinc-600 sm:flex-row sm:items-center">
           <span className="font-mono">Wraith · privacy platform on Stellar</span>
-          <span className="font-mono">MOCK SDK · no real funds move · Testnet demo</span>
+          <span className="font-mono">
+            {import.meta.env.VITE_USE_MOCK === 'true' ? 'MOCK SDK · no real funds move' : 'LIVE · Stellar testnet'} · Testnet demo
+          </span>
         </div>
       </footer>
     </div>
