@@ -16,25 +16,21 @@
  */
 import {
   buildTransaction,
+  buildTransferInputs,
   buildWithdrawInputs,
-  bytesToField,
   createNote,
+  createOutputNote,
   encodePublicInputs,
+  fieldToHex,
   hexToField,
-  MerkleTree,
   NoirProver,
   noteNullifier,
   recipientHash,
+  toField,
   WraithContract,
+  type Field,
 } from '@wraith/sdk'
-import {
-  Account,
-  Contract,
-  rpc,
-  scValToNative,
-  TransactionBuilder,
-  xdr,
-} from '@stellar/stellar-sdk'
+import { rpc, scValToNative, TransactionBuilder, xdr } from '@stellar/stellar-sdk'
 import {
   ASSET_CONFIG,
   ENABLE_WITHDRAW,
@@ -46,12 +42,23 @@ import { getKitAddress, signWithKit } from './wallet-kit'
 import { formatAmount } from './format'
 import {
   addNote,
+  attachWitness,
   getSpendingKey,
   loadNotes,
   markSpent,
   toBalanceNote,
   type StoredNote,
 } from './note-store'
+import {
+  decodeWitness,
+  dummyPath,
+  encodeWitness,
+  readPoolTreeState,
+  witnessesAfterInserts,
+  witnessForLatestLeaf,
+  type MerkleWitness,
+} from './merkle-witness'
+import { decodeReceiveCode, encryptNote, type NotePayload } from './note-crypto'
 import type {
   AssetCode,
   DepositParams,
@@ -215,7 +222,57 @@ export class RealWraithSdk implements WraithSdk {
     if (leafIndex !== undefined) meta.leafIndex = leafIndex
     addNote(note, meta)
 
+    // Capture the note's Merkle witness now, while it is the latest leaf — this is what
+    // lets it be spent later (transfer/withdraw) without the full leaf history.
+    if (leafIndex !== undefined) {
+      await this.captureWitness(note.commitment, leafIndex).catch((err) =>
+        console.warn('Merkle witness capture failed; sending this note will be unavailable.', err),
+      )
+    }
+
     return { hash }
+  }
+
+  /** Read the pool frontier and persist a note's Merkle witness (it must be the latest leaf).
+   *  `leafIndex` defaults to the current last leaf — correct for a note just appended. */
+  private async captureWitness(commitment: Field, leafIndex?: number): Promise<void> {
+    const state = await readPoolTreeState(this.server(), POOL_CONTRACT_ID)
+    const idx = leafIndex ?? state.nextIndex - 1
+    const witness = witnessForLatestLeaf(commitment, idx, state)
+    attachWitness(fieldToHex(commitment), encodeWitness(witness, idx))
+  }
+
+  /**
+   * Resolve a spendable Merkle witness for a stored note: prefer the one captured at
+   * deposit time (validating its root is still in the pool's 100-root history); otherwise
+   * reconstruct from the live frontier if the note is still the latest leaf.
+   */
+  private async resolveWitness(stored: StoredNote): Promise<MerkleWitness> {
+    if (stored.merklePath && stored.merkleIndices && stored.merkleRoot && stored.leafIndex !== undefined) {
+      const witness = decodeWitness({
+        pathElements: stored.merklePath,
+        pathIndices: stored.merkleIndices,
+        root: stored.merkleRoot,
+        leafIndex: stored.leafIndex,
+      })
+      const state = await readPoolTreeState(this.server(), POOL_CONTRACT_ID)
+      if (!state.roots.some((r) => r === witness.root)) {
+        throw new Error(
+          "This note's Merkle root has aged out of the pool's 100-root history. Deposit again to refresh it.",
+        )
+      }
+      return witness
+    }
+    if (stored.leafIndex === undefined) {
+      throw new Error('This note has no leaf index; its Merkle proof cannot be built.')
+    }
+    const state = await readPoolTreeState(this.server(), POOL_CONTRACT_ID)
+    if (stored.leafIndex !== state.nextIndex - 1) {
+      throw new Error(
+        'This note predates the transfer feature and is no longer the latest leaf, so its Merkle path was never captured. Deposit again to enable sending it.',
+      )
+    }
+    return witnessForLatestLeaf(hexToField(stored.commitment), stored.leafIndex, state)
   }
 
   // --- Views (LIVE, from local notes) ---
@@ -267,18 +324,10 @@ export class RealWraithSdk implements WraithSdk {
     }
     const note = toBalanceNote(candidate)
 
-    // Rebuild the local mirror of the on-chain tree and verify it matches the pool root.
-    const tree = this.reconstructTree()
-    const onChainRoot = await this.getLastRoot()
-    if (tree.root !== onChainRoot) {
-      throw new Error(
-        'Local Merkle tree is out of sync with the pool (foreign deposits between yours). On-chain history sync is not implemented for the experimental withdraw.',
-      )
-    }
-
-    const merkle = tree.generateProof(note.leafIndex!)
+    // The note's Merkle witness comes from the frontier captured at deposit time.
+    const witness = await this.resolveWitness(candidate)
     const inputs = buildWithdrawInputs({
-      merkleRoot: merkle.root,
+      merkleRoot: witness.root,
       nullifier: noteNullifier(note),
       recipientHash: recipientHash(recipient),
       amount: note.amount,
@@ -286,8 +335,8 @@ export class RealWraithSdk implements WraithSdk {
       noteOwnerKey: note.ownerKey,
       noteBlinding: note.blinding,
       spendingKey: note.spendingKey,
-      merklePath: merkle.pathElements,
-      merkleIndices: merkle.pathIndices,
+      merklePath: witness.pathElements,
+      merkleIndices: witness.pathIndices,
     })
 
     const circuit = await fetch(`${import.meta.env.BASE_URL}circuits/withdraw.json`).then((r) => {
@@ -315,42 +364,123 @@ export class RealWraithSdk implements WraithSdk {
     return { hash }
   }
 
-  /** Rebuild the append-only tree from locally known notes (must be contiguous from 0). */
-  private reconstructTree(): MerkleTree {
-    const indexed = loadNotes()
-      .filter((n): n is StoredNote & { leafIndex: number } => n.leafIndex !== undefined)
-      .sort((a, b) => a.leafIndex - b.leafIndex)
-    const tree = new MerkleTree()
-    indexed.forEach((n, i) => {
-      if (n.leafIndex !== i) {
-        throw new Error('Cannot reconstruct the Merkle tree: leaves are non-contiguous (foreign deposits).')
-      }
-      tree.insert(hexToField(n.commitment))
-    })
-    return tree
-  }
+  // --- Pay: private transfer (LIVE, in-browser UltraHonk proof) ---
 
-  /** Read the pool's current Merkle root via a read-only simulation of `get_last_root`. */
-  private async getLastRoot(): Promise<bigint> {
-    const server = this.server()
-    const from = await this.requireAddress()
-    const source = new Account(from, '0')
-    const tx = buildTransaction(source, new Contract(POOL_CONTRACT_ID).call('get_last_root'), {
-      networkPassphrase: NETWORK_PASSPHRASE,
-    })
-    const sim = await server.simulateTransaction(tx)
-    if (rpc.Api.isSimulationError(sim) || !sim.result?.retval) {
-      throw new Error('Could not read the pool root (get_last_root simulation failed).')
+  async transfer({ recipientKey, asset, amount }: TransferParams): Promise<TxResult> {
+    const cfg = ASSET_CONFIG[asset]
+    const amountBase = toBaseUnits(amount, cfg.decimals)
+    if (amountBase <= 0n) throw new Error('Amount must be greater than zero.')
+    const code = decodeReceiveCode(recipientKey)
+
+    // Single-input transfer: pick the smallest unspent note of this asset that covers the
+    // amount (the circuit is 2-in/2-out; the second input is a 0-amount dummy).
+    const chosen = loadNotes()
+      .filter((n) => !n.spent && n.assetCode === asset && n.leafIndex !== undefined && BigInt(n.amount) >= amountBase)
+      .sort((a, b) => (BigInt(a.amount) < BigInt(b.amount) ? -1 : BigInt(a.amount) > BigInt(b.amount) ? 1 : 0))[0]
+    if (!chosen) {
+      throw new Error(
+        'No single shielded note covers this amount. Deposit into one note first, or send a smaller amount.',
+      )
     }
-    const raw = scValToNative(sim.result.retval) as Uint8Array
-    return bytesToField(raw instanceof Uint8Array ? raw : new Uint8Array(raw))
-  }
 
-  // --- Not yet wired (clear "coming soon" errors) ---
+    const input = toBalanceNote(chosen)
+    const witness = await this.resolveWitness(chosen)
+    const assetId = input.assetId
+    const changeAmount = input.amount - amountBase
 
-  async transfer(_params: TransferParams): Promise<TxResult> {
-    void _params
-    throw new Error('Private transfers are coming soon — not yet wired to the live pool.')
+    const spendingKey = getSpendingKey()
+    const recipientNote = createOutputNote({ assetId, amount: amountBase, ownerKey: code.ownerKey })
+    const changeNote = createNote({ assetId, amount: changeAmount, spendingKey })
+    const dummy = createNote({ assetId, amount: 0n, spendingKey })
+    const dp = dummyPath()
+
+    const inputs = buildTransferInputs({
+      merkleRoot: witness.root,
+      nullifiers: [noteNullifier(input), noteNullifier(dummy)],
+      outCommitments: [recipientNote.commitment, changeNote.commitment],
+      extDataHash: toField(0n),
+      inNotes: [
+        {
+          amount: input.amount,
+          assetId,
+          spendingKey: input.spendingKey,
+          blinding: input.blinding,
+          merklePath: witness.pathElements,
+          merkleIndices: witness.pathIndices,
+        },
+        {
+          amount: 0n,
+          assetId,
+          spendingKey: dummy.spendingKey,
+          blinding: dummy.blinding,
+          merklePath: dp.pathElements,
+          merkleIndices: dp.pathIndices,
+        },
+      ],
+      outNotes: [
+        { amount: recipientNote.amount, assetId, ownerKey: recipientNote.ownerKey, blinding: recipientNote.blinding },
+        { amount: changeNote.amount, assetId, ownerKey: changeNote.ownerKey, blinding: changeNote.blinding },
+      ],
+    })
+
+    const circuit = await fetch(`${import.meta.env.BASE_URL}circuits/transfer.json`).then((r) => {
+      if (!r.ok) throw new Error('Compiled transfer circuit missing at /circuits/transfer.json.')
+      return r.json()
+    })
+    const prover = new NoirProver(circuit)
+    let proof
+    try {
+      proof = await prover.prove(inputs)
+      // Verify locally against the same transcript before paying gas — a wrong witness
+      // (e.g. the note's root aged out) fails here instead of on-chain.
+      if (!(await prover.verify(proof))) {
+        throw new Error('Local proof verification failed — aborting before submit.')
+      }
+    } finally {
+      await prover.destroy().catch(() => undefined)
+    }
+
+    // Note delivery: read the frontier now (post-proving, pre-submit), compute the two
+    // output notes' witnesses, and seal the recipient note (fields + witness) to their
+    // viewing key so they can discover and later spend it. The change memo is left empty —
+    // we keep the change note locally.
+    const pre = await readPoolTreeState(this.server(), POOL_CONTRACT_ID)
+    const base = pre.nextIndex
+    const [recipientWitness, changeWitness] = witnessesAfterInserts(pre.frontier, base, [
+      recipientNote.commitment,
+      changeNote.commitment,
+    ])
+    const payload: NotePayload = {
+      v: 1,
+      code: asset,
+      assetId: fieldToHex(assetId),
+      amount: amountBase.toString(),
+      ownerKey: fieldToHex(code.ownerKey),
+      blinding: fieldToHex(recipientNote.blinding),
+      commitment: fieldToHex(recipientNote.commitment),
+      leafIndex: base,
+      root: fieldToHex(recipientWitness.root),
+      path: recipientWitness.pathElements.map(fieldToHex),
+      indices: recipientWitness.pathIndices,
+    }
+    const memos = [encryptNote(code.encPub, payload), new Uint8Array(0)]
+
+    const from = await this.requireAddress()
+    const op = this.contract.transferOp({
+      proof: proof.proof,
+      publicInputs: encodePublicInputs(proof.publicInputs),
+      memos,
+    })
+    const { hash } = await this.submitOp(op, from)
+
+    // Local wallet update: the input note is spent; keep the change note (out index base+1)
+    // with the witness we just computed so it can be spent again.
+    markSpent(chosen.commitment)
+    if (changeAmount > 0n) {
+      addNote(changeNote, { assetCode: asset, txHash: hash })
+      attachWitness(fieldToHex(changeNote.commitment), encodeWitness(changeWitness, base + 1))
+    }
+    return { hash }
   }
 
   async placeOrder(_params: PlaceOrderParams): Promise<PlaceOrderResult> {

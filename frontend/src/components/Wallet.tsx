@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import type { ReactNode, SVGProps } from 'react'
-import { deriveOwnerKey, fieldToHex } from '@wraith/sdk'
 import { useWraith } from '../hooks/useWraith'
-import { getSpendingKey } from '../lib/note-store'
+import { clearAllNotes } from '../lib/note-store'
 import { ASSETS } from '../lib/assets'
 import { formatUsd } from '../lib/format'
 import { AssetAvatar, CopyIcon, GhostMark } from './ui'
+import { CoinBadge } from './BrandIcons'
 import { ConnectWallet } from './ConnectWallet'
 import { Sheet } from './Sheet'
 import { Bridge } from './Bridge'
@@ -73,11 +73,12 @@ function ActionButton({ label, icon, onClick }: { label: string; icon: ReactNode
 
 const HIDDEN = '••••••'
 
-function Receive({ ownerKeyHex }: { ownerKeyHex: string }) {
+function Receive({ receiveCode }: { receiveCode: string | null }) {
   const [copied, setCopied] = useState(false)
   async function copy() {
+    if (!receiveCode) return
     try {
-      await navigator.clipboard.writeText(ownerKeyHex)
+      await navigator.clipboard.writeText(receiveCode)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
@@ -87,21 +88,29 @@ function Receive({ ownerKeyHex }: { ownerKeyHex: string }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-zinc-400">
-        Share your <span className="text-zinc-200">shielded account key</span> to receive a private payment.
-        It reveals nothing about your balance or history.
+        Share your <span className="text-zinc-200">receive code</span> to get paid privately. The sender encrypts
+        the payment to it; it reveals nothing about your balance or history.
       </p>
       <div className="flex items-center justify-center rounded-2xl border border-ink-700 bg-ink-950/50 p-6">
         <GhostMark className="h-16 w-16 text-spectral/70" />
       </div>
-      <button
-        type="button"
-        onClick={copy}
-        className="flex w-full items-center gap-2 rounded-xl border border-ink-700 bg-ink-900/70 px-3.5 py-3 text-left transition hover:border-spectral/40"
-      >
-        <span className="break-all font-mono text-xs text-zinc-300">{ownerKeyHex}</span>
-        <CopyIcon className="ml-auto h-4 w-4 shrink-0 text-zinc-500" />
-      </button>
-      {copied && <p className="text-center text-xs text-emerald-400">Copied to clipboard</p>}
+      {receiveCode ? (
+        <>
+          <button
+            type="button"
+            onClick={copy}
+            className="flex w-full items-center gap-2 rounded-xl border border-ink-700 bg-ink-900/70 px-3.5 py-3 text-left transition hover:border-spectral/40"
+          >
+            <span className="break-all font-mono text-xs text-zinc-300">{receiveCode}</span>
+            <CopyIcon className="ml-auto h-4 w-4 shrink-0 text-zinc-500" />
+          </button>
+          {copied && <p className="text-center text-xs text-emerald-400">Copied to clipboard</p>}
+        </>
+      ) : (
+        <p className="rounded-xl border border-ink-700 bg-ink-900/50 px-3.5 py-3 text-center text-sm text-zinc-500">
+          Connect your Stellar wallet to reveal your receive code.
+        </p>
+      )}
     </div>
   )
 }
@@ -109,34 +118,34 @@ function Receive({ ownerKeyHex }: { ownerKeyHex: string }) {
 // --- wallet -----------------------------------------------------------------
 
 export function Wallet() {
-  const { balances, loadingBalances } = useWraith()
+  const { balances, loadingBalances, receiveCode, refreshBalances } = useWraith()
   const [revealed, setRevealed] = useState(false)
   const [sheet, setSheet] = useState<SheetId | null>(null)
 
   const total = balances.reduce((sum, b) => sum + b.usdEstimate, 0)
 
-  const ownerKeyHex = useMemo(() => {
-    try {
-      return fieldToHex(deriveOwnerKey(getSpendingKey()))
-    } catch (err) {
-      console.error('owner key derivation failed', err)
-      return '0x…'
-    }
-  }, [])
+  async function clearLocalData() {
+    const ok = window.confirm(
+      'Clear locally-cached shielded notes on this device?\n\nYour wallet stays connected — this only removes the notes/balance stored in this browser. Any on-chain funds tied to older notes stay on-chain.',
+    )
+    if (!ok) return
+    clearAllNotes()
+    await refreshBalances()
+  }
 
   const sheetMeta: Record<SheetId, { title: string; body: ReactNode }> = {
     bridge: { title: 'Deposit', body: <Bridge embedded /> },
     send: { title: 'Send', body: <Pay embedded /> },
     swap: { title: 'Swap', body: <Swap embedded /> },
-    receive: { title: 'Receive', body: <Receive ownerKeyHex={ownerKeyHex} /> },
+    receive: { title: 'Receive', body: <Receive receiveCode={receiveCode} /> },
   }
 
   return (
     <div className="mx-auto w-full max-w-[460px] px-4 py-6">
       {/* Header — shielded identity */}
       <header className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2 rounded-full border border-ink-700 bg-ink-900/50 px-3 py-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-zinc-300" />
+        <div className="flex items-center gap-2 rounded-full border border-ink-700 bg-ink-900/50 py-1 pl-1 pr-3">
+          <CoinBadge name="stellar" size="sm" />
           <span className="text-xs font-medium text-zinc-300">Stellar Testnet</span>
         </div>
         <ConnectWallet />
@@ -210,6 +219,17 @@ export function Wallet() {
           </div>
         )}
       </section>
+
+      {/* Footer — local data reset */}
+      <footer className="mt-8 flex justify-center">
+        <button
+          type="button"
+          onClick={() => void clearLocalData()}
+          className="text-xs text-zinc-600 transition hover:text-zinc-400"
+        >
+          Clear local data
+        </button>
+      </footer>
 
       {/* Action sheets */}
       {(['bridge', 'send', 'swap', 'receive'] as SheetId[]).map((id) => (

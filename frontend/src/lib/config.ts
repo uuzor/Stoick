@@ -24,10 +24,17 @@ function flag(key: string): boolean {
   return v === 'true' || v === '1'
 }
 
-/** WraithPool contract id on the configured network. */
+/**
+ * WraithPool contract id on the configured network.
+ *
+ * Points at the memo-enabled pool (redeployed 2026-07-01): its `transfer` carries an
+ * encrypted note payload in `TransferEvent`, which the recipient scans to auto-discover
+ * incoming notes (note discovery). Fresh tree; reuses the existing verifier contracts.
+ * The pre-memo pool was CD7EF4GG32IPVS2PGD2LMXEO3TPEWBZRUCBBSPXQ236CD6TMF5S4UUZR.
+ */
 export const POOL_CONTRACT_ID = env(
   'VITE_WRAITH_POOL',
-  'CD7EF4GG32IPVS2PGD2LMXEO3TPEWBZRUCBBSPXQ236CD6TMF5S4UUZR',
+  'CBVM7B622FSW47FDNUVU7GEU7TNRVRWEVOTNAUWVUOHFMIPSTDL2YVNG',
 )
 
 /** Native (XLM) Stellar Asset Contract address. */

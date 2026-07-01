@@ -43,12 +43,12 @@ export function Pay({ embedded }: { embedded?: boolean } = {}) {
         <SectionHeading icon={<ShieldIcon className="h-4 w-4" />} title="Private transfer" hint="ZK-proven" />
         <div className="mt-5 space-y-4">
           <Field
-            label="Recipient key"
-            hint="The recipient's Wraith owner key (shared privately), not a Stellar address."
+            label="Recipient code"
+            hint="The recipient's Wraith receive code (wr1…) from their Receive screen — the payment is encrypted to it."
           >
             <TextInput
               mono
-              placeholder="wraith1… / 0x…"
+              placeholder="wr1…"
               value={recipientKey}
               onChange={(e) => setRecipientKey(e.target.value)}
             />
@@ -75,7 +75,7 @@ export function Pay({ embedded }: { embedded?: boolean } = {}) {
             Send privately
           </Button>
           <p className="text-center text-xs text-zinc-600">
-            On-chain, observers see only two opaque commitments and a valid proof.
+            On-chain, observers see only two opaque commitments and a valid proof — no amount, no parties.
           </p>
         </div>
       </Card>

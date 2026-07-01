@@ -91,3 +91,18 @@ export async function signWithKit(xdr: string, address: string): Promise<string>
   })
   return signedTxXdr
 }
+
+/**
+ * Sign an arbitrary message with the connected wallet. Used to derive the shielded
+ * spending key from a signature (see `lib/shielded-identity`). Throws if the wallet
+ * does not support message signing or the user declines — callers should fall back.
+ */
+export async function signMessageWithKit(message: string, address: string): Promise<string> {
+  const stored = readStoredWalletId()
+  if (stored) kit.setWallet(stored)
+  const { signedMessage } = await kit.signMessage(message, {
+    address,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+  return signedMessage
+}
