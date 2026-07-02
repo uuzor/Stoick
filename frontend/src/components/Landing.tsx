@@ -1,31 +1,55 @@
+import { useEffect, useRef } from 'react'
+import type { CSSProperties } from 'react'
 import FluidVolume from './FluidVolume'
 import ScrambleCycle from './ScrambleCycle'
+import markUrl from '../assets/wraith-mark.png'
 
 const ROTATING = ['shielded', 'unlinkable', 'verified', 'private', 'yours']
 
-const STROKE = 'rgba(239,233,220,0.22)'
+const LINE_STROKE = 'rgba(255,255,255,0.62)'
+const CIRCLE_STROKE = 'rgba(239,233,220,0.24)'
 
 /** Two large overlapping circles + three skewed lines + position labels — the
- *  coords background of the monopo.nyc intro, in Wraith's own words. */
+ *  coords background of the monopo.nyc intro, in Wraith's own words. Line and
+ *  circle colours are driven by the `--coord-*` vars so they can darken on
+ *  scroll against the incoming footer. */
 function CoordsBackground() {
+  const lines = [
+    { deg: -15, top: '52%' },
+    { deg: 1, top: '57%' },
+    { deg: 7.6, top: '61%' },
+  ]
+  const circles = [
+    { r: 322, tx: -150, ty: -12 },
+    { r: 286, tx: 146, ty: 22 },
+  ]
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
       <svg
-        className="absolute left-1/2 top-[64%]"
-        style={{ width: 'min(150vh, 150vw)', height: 'min(150vh, 150vw)', transform: 'translate(-50%, -50%)' }}
-        viewBox="0 0 1222 1222"
+        className="absolute left-1/2 top-[52%]"
+        style={{ width: 'min(80vh, 92vw)', height: 'min(80vh, 92vw)', transform: 'translate(-50%, -50%)' }}
+        viewBox="0 0 1000 1000"
         fill="none"
         aria-hidden
       >
-        <circle cx="611" cy="611" r="500" stroke={STROKE} strokeWidth="1.2" transform="translate(-6 0)" />
-        <circle cx="611" cy="611" r="500" stroke={STROKE} strokeWidth="1.2" transform="translate(6 0)" />
+        {circles.map((c, i) => (
+          <circle
+            key={i}
+            cx="500"
+            cy="500"
+            r={c.r}
+            stroke="var(--coord-circle)"
+            strokeWidth="1.1"
+            transform={`translate(${c.tx} ${c.ty})`}
+          />
+        ))}
       </svg>
 
-      {[-15, 1, 7.6].map((deg, i) => (
+      {lines.map((l, i) => (
         <div
           key={i}
-          className="absolute left-[-25%] top-[64%] h-px w-[150%]"
-          style={{ background: STROKE, transform: `translateY(-50%) rotate(${deg}deg)`, transformOrigin: 'center' }}
+          className="absolute left-[-25%] h-px w-[150%]"
+          style={{ top: l.top, background: 'var(--coord-line)', transform: `translateY(-50%) rotate(${l.deg}deg)`, transformOrigin: 'center' }}
         />
       ))}
 
@@ -52,9 +76,37 @@ function Word({ children }: { children: string }) {
 }
 
 export function Landing({ onEnter }: { onEnter: () => void }) {
+  const heroRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    const el = heroRef.current
+    if (!el) return
+    let raf = 0
+    const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t)
+    const update = () => {
+      raf = 0
+      const p = Math.min(1, Math.max(0, window.scrollY / (window.innerHeight * 0.6)))
+      el.style.setProperty('--coord-line', `rgba(${lerp(255, 20, p)},${lerp(255, 16, p)},${lerp(255, 9, p)},0.62)`)
+      el.style.setProperty('--coord-circle', `rgba(${lerp(239, 20, p)},${lerp(233, 16, p)},${lerp(220, 9, p)},${(0.24 + 0.26 * p).toFixed(3)})`)
+    }
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(update)
+    }
+    update()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [])
+
   return (
     <div className="relative w-full bg-[#211b12] text-[#efe9dc]">
-      <section className="relative min-h-screen w-full overflow-hidden">
+      <section
+        ref={heroRef}
+        className="relative min-h-screen w-full overflow-hidden"
+        style={{ '--coord-line': LINE_STROKE, '--coord-circle': CIRCLE_STROKE } as CSSProperties}
+      >
       {/* Backdrop — monopo.nyc volumetric raymarch (flowing caustic liquid).
           Grain is a separate static overlay; the field's own alpha bleeds the
           bottom edge into the footer cream. */}
@@ -81,11 +133,14 @@ export function Landing({ onEnter }: { onEnter: () => void }) {
         style={{ background: 'linear-gradient(to bottom, rgba(20,16,9,0.55), rgba(20,16,9,0.12) 42%, transparent 70%)' }}
       />
 
-      {/* Header */}
-      <header className="absolute inset-x-0 top-0 z-20 border-b border-[#efe9dc]/15">
+      {/* Header — fixed, inverts against whatever scrolls behind it. */}
+      <header className="fixed inset-x-0 top-0 z-50 mix-blend-difference">
         <div className="flex items-center justify-between px-8 py-5">
-          <a href="#/" className="font-display text-sm font-semibold tracking-tight">
-            wraith <span className="align-super font-mono text-[10px] tracking-[0.2em] text-[#efe9dc]/60">ZK</span>
+          <a href="#/" className="flex items-center gap-2.5">
+            <img src={markUrl} alt="Wraith" className="h-7 w-auto" />
+            <span className="font-display text-sm font-semibold tracking-tight">
+              wraith <span className="align-super font-mono text-[10px] tracking-[0.2em] text-[#efe9dc]/60">ZK</span>
+            </span>
           </a>
           <nav className="flex items-center gap-8 font-mono text-[11px] uppercase tracking-[0.18em]">
             <a href="#/faucet" className="text-[#efe9dc]/70 transition hover:text-[#efe9dc]">
@@ -119,61 +174,84 @@ export function Landing({ onEnter }: { onEnter: () => void }) {
 
         <span className="mt-10 font-mono text-[11px] uppercase tracking-[0.3em] text-[#efe9dc]/55">scroll</span>
       </div>
+
+      {/* Clean seam into the footer: a long, gradual cream wash over the bottom
+          (grain, lines and fluid alike) reaching pure #f4efe4 at the boundary so
+          the section change is invisible. Below the z-10 content, so the headline
+          and `scroll` stay crisp; the ramp stays transparent through their band. */}
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-[5] h-[32rem]"
+        style={{
+          background:
+            'linear-gradient(to bottom, rgba(244,239,228,0) 0%, rgba(244,239,228,0) 44%, rgba(244,239,228,0.28) 64%, rgba(244,239,228,0.62) 80%, rgba(244,239,228,0.9) 92%, #f4efe4 100%)',
+        }}
+      />
       </section>
 
-      <footer className="bg-[#f4efe4] text-[#1b1610]">
-        <div className="mx-auto max-w-6xl px-8 py-24">
-          <div className="flex flex-col gap-10 border-b border-[#1b1610]/15 pb-16 md:flex-row md:items-end md:justify-between">
-            <h2
-              className="max-w-xl font-display font-medium leading-[1.02] tracking-[-0.02em]"
-              style={{ fontSize: 'clamp(1.9rem, 4vw, 3.25rem)' }}
-            >
-              Money that stays yours — shielded, private, verified on a public chain.
-            </h2>
-            <button
-              onClick={onEnter}
-              className="shrink-0 rounded-full bg-[#1b1610] px-8 py-3.5 font-mono text-[11px] uppercase tracking-[0.2em] text-[#f4efe4] transition hover:bg-[#3b3226]"
-            >
-              Enter app →
-            </button>
+      <footer className="relative flex min-h-screen flex-col justify-between overflow-hidden bg-[#f4efe4] px-8 py-16 text-[#1b1610]">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-50"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.4 0.4 0.4 0 -0.4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E\")",
+            backgroundSize: '90px 90px',
+          }}
+        />
+
+        <div className="relative flex items-start justify-between">
+          <p className="max-w-xs text-[15px] font-medium leading-snug">
+            Feel free to reach out if you want private money on Stellar — or simply have a chat.
+          </p>
+          <img src={markUrl} alt="Wraith" className="h-11 w-auto opacity-80" style={{ filter: 'brightness(0)' }} />
+        </div>
+
+        <div className="relative">
+          <a
+            href="mailto:hello@wraith.money"
+            className="block font-display font-light uppercase leading-none tracking-[-0.02em] text-[#b3a081] transition-colors hover:text-[#4f3e22]"
+            style={{ fontSize: 'clamp(2rem, 8.2vw, 6.5rem)' }}
+          >
+            hello@wraith.money
+          </a>
+          <div className="mt-6 h-px w-full bg-[#1b1610]/20" />
+        </div>
+
+        <div className="relative">
+          <div className="flex flex-col gap-12 md:flex-row md:items-end md:justify-between">
+            <nav className="flex gap-6 font-mono text-[13px] uppercase tracking-[0.14em] text-[#1b1610]/70">
+              <a href="#" className="transition hover:text-[#1b1610]">X</a>
+              <a href="#" className="transition hover:text-[#1b1610]">GitHub</a>
+              <a href="#" className="transition hover:text-[#1b1610]">Discord</a>
+            </nav>
+
+            <div className="grid max-w-2xl grid-cols-1 gap-10 sm:grid-cols-2">
+              <div className="max-w-[15rem]">
+                <div className="mb-4 flex items-center gap-2 font-mono text-[12px] uppercase tracking-[0.16em]">
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden>
+                    <circle cx="6.5" cy="6.5" r="6" stroke="currentColor" />
+                  </svg>
+                  Open source
+                </div>
+                <p className="text-[13px] leading-relaxed text-[#1b1610]/70">
+                  Wraith is open source and community-run. We're always looking for cryptographers, Soroban engineers and designers. Reach out with what you'd build.
+                </p>
+              </div>
+              <div className="max-w-[15rem]">
+                <div className="mb-4 flex items-center gap-2 font-mono text-[12px] uppercase tracking-[0.16em]">
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden>
+                    <circle cx="5" cy="6.5" r="4.5" stroke="currentColor" />
+                    <circle cx="8" cy="6.5" r="4.5" stroke="currentColor" />
+                  </svg>
+                  Security
+                </div>
+                <p className="text-[13px] leading-relaxed text-[#1b1610]/70">
+                  Found a vulnerability in the circuits or contracts? Disclose it responsibly at security@wraith.money — privacy protects everyone.
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div className="mt-16 grid grid-cols-2 gap-10 font-mono text-[12px] uppercase tracking-[0.12em] md:grid-cols-4">
-            <div>
-              <div className="mb-4 text-[#1b1610]/45">Product</div>
-              <ul className="space-y-2.5">
-                <li><a href="#/app" className="transition hover:opacity-60">Portfolio</a></li>
-                <li><a href="#/app" className="transition hover:opacity-60">Bridge</a></li>
-                <li><a href="#/app" className="transition hover:opacity-60">Pay</a></li>
-                <li><a href="#/app" className="transition hover:opacity-60">Swap</a></li>
-              </ul>
-            </div>
-            <div>
-              <div className="mb-4 text-[#1b1610]/45">Network</div>
-              <ul className="space-y-2.5">
-                <li><a href="#/faucet" className="transition hover:opacity-60">Faucet</a></li>
-                <li><span className="text-[#1b1610]/70">Stellar testnet</span></li>
-                <li><span className="text-[#1b1610]/70">Soroban</span></li>
-              </ul>
-            </div>
-            <div>
-              <div className="mb-4 text-[#1b1610]/45">Privacy</div>
-              <ul className="space-y-2.5">
-                <li><span className="text-[#1b1610]/70">Zero-knowledge</span></li>
-                <li><span className="text-[#1b1610]/70">Groth16 · BN254</span></li>
-                <li><span className="text-[#1b1610]/70">Poseidon · Merkle</span></li>
-              </ul>
-            </div>
-            <div>
-              <div className="mb-4 text-[#1b1610]/45">Wraith</div>
-              <ul className="space-y-2.5">
-                <li><span className="text-[#1b1610]/70">Private by default</span></li>
-                <li><a href="#/" className="transition hover:opacity-60">Home</a></li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="mt-20 flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.14em] text-[#1b1610]/55">
+          <div className="mt-14 flex items-center justify-between border-t border-[#1b1610]/12 pt-6 font-mono text-[11px] uppercase tracking-[0.14em] text-[#1b1610]/50">
             <span>© Wraith 2026</span>
             <button
               onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
