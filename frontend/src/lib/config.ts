@@ -14,20 +14,31 @@
 import { assetFromSac, hash2, NATIVE_ASSET_ID, toField, type Field } from '@wraith/sdk'
 import type { AssetCode } from './wraith-sdk'
 
+// Tolerate a missing `import.meta.env` (Node/SSR/test contexts, where Vite hasn't injected it)
+// by falling back to the compiled defaults rather than throwing.
+const META_ENV = (import.meta.env ?? {}) as Partial<ImportMetaEnv>
+
 function env(key: string, fallback: string): string {
-  const v = import.meta.env[key as keyof ImportMetaEnv] as string | undefined
+  const v = META_ENV[key as keyof ImportMetaEnv] as string | undefined
   return v && v.length > 0 ? v : fallback
 }
 
 function flag(key: string): boolean {
-  const v = import.meta.env[key as keyof ImportMetaEnv] as string | undefined
+  const v = META_ENV[key as keyof ImportMetaEnv] as string | undefined
   return v === 'true' || v === '1'
 }
 
-/** WraithPool contract id on the configured network. */
+/**
+ * WraithPool contract id on the configured network.
+ *
+ * Points at the memo-enabled pool (redeployed 2026-07-01): its `transfer` carries an
+ * encrypted note payload in `TransferEvent`, which the recipient scans to auto-discover
+ * incoming notes (note discovery). Fresh tree; reuses the existing verifier contracts.
+ * The pre-memo pool was CD7EF4GG32IPVS2PGD2LMXEO3TPEWBZRUCBBSPXQ236CD6TMF5S4UUZR.
+ */
 export const POOL_CONTRACT_ID = env(
   'VITE_WRAITH_POOL',
-  'CD7EF4GG32IPVS2PGD2LMXEO3TPEWBZRUCBBSPXQ236CD6TMF5S4UUZR',
+  'CBVM7B622FSW47FDNUVU7GEU7TNRVRWEVOTNAUWVUOHFMIPSTDL2YVNG',
 )
 
 /** Native (XLM) Stellar Asset Contract address. */
@@ -39,17 +50,15 @@ export const NATIVE_SAC = env(
 /** Soroban RPC endpoint (Testnet by default). */
 export const SOROBAN_RPC_URL = env('VITE_SOROBAN_RPC_URL', 'https://soroban-testnet.stellar.org')
 
+/** Ledger the pool was deployed at — the client indexer's cold-start floor (clamped to the
+ *  RPC's event-retention window, so older history is unavailable). */
+export const POOL_DEPLOY_LEDGER = Number(env('VITE_POOL_DEPLOY_LEDGER', '3382667'))
+
 /** Stellar network passphrase. */
 export const NETWORK_PASSPHRASE = env('VITE_NETWORK_PASSPHRASE', 'Test SDF Network ; September 2015')
 
 /** When true, the app uses the offline `MockWraithSdk` instead of the live client. */
 export const USE_MOCK = flag('VITE_USE_MOCK')
-
-/**
- * When true, the experimental in-browser withdraw prover is enabled (heavy: pulls
- * `@noir-lang/noir_js` + `@aztec/bb.js` WASM and fetches a CRS). Off by default.
- */
-export const ENABLE_WITHDRAW = flag('VITE_ENABLE_WITHDRAW')
 
 /** Optional USDC SAC address — not part of the single-asset testnet demo. */
 export const USDC_SAC = env('VITE_USDC_SAC', '')

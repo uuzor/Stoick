@@ -11,13 +11,12 @@ import { formatAmount, parseAmount } from './format'
 import { RealWraithSdk } from './real-sdk'
 
 /**
- * Asset codes the UI knows about. `XLM` / `USDC` are native Stellar shielded assets;
- * `bETH` / `bUSDC` are *bridged* assets minted by the cross-chain Bridge tab (a lock on
- * Ethereum Sepolia mints a shielded note with a bridged `asset_id`, BRIDGE_SPEC §3).
- * Bridged codes are intentionally NOT part of {@link ASSET_OPTIONS} (Pay/Swap stay
- * native-only); they surface in Portfolio once bridged in.
+ * A shielded asset's display code. The protocol is asset-agnostic — any Stellar Asset
+ * Contract (SAC) can be deposited — so this is an open string, not a fixed union. Well-
+ * known codes (XLM, USDC, ETH, BTC, XRP, bETH, bUSDC) have curated metadata in
+ * `lib/tokens.ts`; custom tokens carry their own descriptor (see {@link DepositParams}).
  */
-export type AssetCode = 'XLM' | 'USDC' | 'bETH' | 'bUSDC'
+export type AssetCode = string
 export type OrderSide = 'buy' | 'sell'
 
 export interface ShieldedBalance {
@@ -52,6 +51,10 @@ export interface TxResult {
 export interface DepositParams {
   asset: AssetCode
   amount: string
+  /** Explicit token descriptor for curated/custom assets. When omitted, XLM is assumed. */
+  sac?: string
+  decimals?: number
+  native?: boolean
 }
 
 export interface WithdrawParams {
@@ -59,6 +62,8 @@ export interface WithdrawParams {
   amount: string
   /** Classic Stellar recipient address (G…). */
   recipient: string
+  /** The exact note to withdraw (commitment hex), from the note picker. */
+  commitment?: string
 }
 
 export interface TransferParams {
@@ -157,7 +162,7 @@ class MockWraithSdk implements WraithSdk {
       .map((asset) => ({
         asset,
         amount: formatAmount(this.balances[asset]),
-        usdEstimate: round2(this.balances[asset] * PRICES[asset]),
+        usdEstimate: round2(this.balances[asset] * (PRICES[asset] ?? 0)),
       }))
   }
 
@@ -169,7 +174,7 @@ class MockWraithSdk implements WraithSdk {
   async deposit({ asset, amount }: DepositParams): Promise<TxResult> {
     await delay(networkDelay(600, 400))
     const value = parseAmount(amount)
-    if (Number.isFinite(value) && value > 0) this.balances[asset] += value
+    if (Number.isFinite(value) && value > 0) this.balances[asset] = (this.balances[asset] ?? 0) + value
     return { hash: randomHash() }
   }
 

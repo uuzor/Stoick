@@ -29,9 +29,10 @@ function wait(ms: number): Promise<void> {
 }
 
 /**
- * Orchestrates the reusable proof-progress UX: witness → proof → submit →
- * confirmed. The witness/proof phases are simulated; the real async work
- * (the SDK call) happens during the "Submitting transaction…" step.
+ * Orchestrates the reusable proof-progress UX: witness → proof → submit → confirmed.
+ * The real async work (`action` — in-browser UltraHonk proving + submit + confirm) runs
+ * during the "Computing proof…" step, since proving dominates the wall-clock; the submit
+ * and confirm steps flash once it resolves.
  */
 export function useProofFlow(): ProofFlow {
   const [status, setStatus] = useState<ProofStatus>('idle')
@@ -42,12 +43,12 @@ export function useProofFlow(): ProofFlow {
     setError(null)
     setStatus('running')
     setStep(0)
-    await wait(900) // Generating witness…
-    setStep(1)
-    await wait(1200) // Computing proof…
-    setStep(2) // Submitting transaction…
+    await wait(600) // Generating witness…
+    setStep(1) // Computing proof… — the real proving + submit happens here (seconds)
     try {
       const result = await action()
+      setStep(2) // Submitting transaction…
+      await wait(300)
       setStep(3)
       setStatus('done')
       return result

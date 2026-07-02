@@ -47,9 +47,9 @@ export function ConnectWallet() {
         </button>
 
         {open && (
-          <div className="absolute right-0 z-40 mt-2 w-72 rounded-xl border border-ink-700 bg-ink-850 p-3 shadow-xl animate-fade-in">
+          <div className="absolute right-0 z-40 mt-2 w-72 rounded-xl border border-ink-700 bg-ink-850 p-3 shadow-panel animate-fade-in">
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">Connected</span>
+              <span className="text-xs font-medium text-zinc-400">Connected</span>
               <Badge tone={wallet.isTestnet ? 'success' : 'warn'}>{wallet.network ?? 'Unknown'}</Badge>
             </div>
 
@@ -61,7 +61,7 @@ export function ConnectWallet() {
               <span className="break-all font-mono text-xs text-zinc-300">{wallet.address}</span>
               <CopyIcon className="ml-auto h-4 w-4 shrink-0 text-zinc-500" />
             </button>
-            {copied && <p className="mt-1.5 text-[11px] text-emerald-400">Copied to clipboard</p>}
+            {copied && <p className="mt-1.5 text-xs text-emerald-400">Copied to clipboard</p>}
 
             {!wallet.isTestnet && (
               <p className="mt-2 text-xs text-amber-400">Switch Freighter to Testnet for this demo.</p>
@@ -83,7 +83,10 @@ export function ConnectWallet() {
     )
   }
 
-  const busy = wallet.status === 'connecting' || wallet.status === 'checking'
+  // Only a user-initiated connect shows "Connecting…". The initial silent probe
+  // ('checking') must NOT render as busy, or the button looks like it's stuck
+  // trying to connect on every load.
+  const busy = wallet.status === 'connecting'
   return (
     <div className="flex items-center gap-3">
       {wallet.error && wallet.status === 'disconnected' && (

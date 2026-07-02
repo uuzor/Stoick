@@ -60,7 +60,7 @@ export function ProofProgress({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/80 p-4 animate-fade-in">
       <Card className="w-full max-w-sm p-6">
         <div className="mb-5 flex items-center gap-3">
           <span

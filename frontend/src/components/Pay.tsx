@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { useWraith } from '../hooks/useWraith'
 import { useProofFlow } from '../hooks/useProofFlow'
-import { ASSET_OPTIONS } from '../lib/assets'
+import { TOKEN_OPTIONS } from '../lib/tokens'
 import { isPositiveAmount } from '../lib/format'
 import type { AssetCode } from '../lib/wraith-sdk'
 import { Button, Card, Field, PageIntro, SectionHeading, Select, ShieldIcon, TextInput } from './ui'
 import { ProofProgress } from './ProofProgress'
 
-export function Pay() {
+export function Pay({ embedded }: { embedded?: boolean } = {}) {
   const { sdk, refreshBalances } = useWraith()
   const proof = useProofFlow()
 
@@ -34,19 +34,21 @@ export function Pay() {
   }
 
   return (
-    <div className="space-y-6">
-      <PageIntro title="Pay" subtitle="Send a private payment — amount and participants hidden on-chain." />
+    <div className={embedded ? 'space-y-5' : 'space-y-6'}>
+      {!embedded && (
+        <PageIntro title="Pay" subtitle="Send a private payment with the amount and participants hidden on-chain." />
+      )}
 
-      <Card className="mx-auto max-w-xl p-6">
+      <Card className={embedded ? 'p-5' : 'mx-auto max-w-xl p-6'}>
         <SectionHeading icon={<ShieldIcon className="h-4 w-4" />} title="Private transfer" hint="ZK-proven" />
         <div className="mt-5 space-y-4">
           <Field
-            label="Recipient key"
-            hint="The recipient's Wraith owner key, shared out-of-band — not a Stellar address."
+            label="Recipient code"
+            hint="The recipient's Wraith receive code (wr1…) from their Receive screen — the payment is encrypted to it."
           >
             <TextInput
               mono
-              placeholder="wraith1… / 0x…"
+              placeholder="wr1…"
               value={recipientKey}
               onChange={(e) => setRecipientKey(e.target.value)}
             />
@@ -56,7 +58,7 @@ export function Pay() {
               <Select
                 value={asset}
                 onChange={(e) => setAsset(e.target.value as AssetCode)}
-                options={ASSET_OPTIONS}
+                options={TOKEN_OPTIONS}
               />
             </Field>
             <Field label="Amount">
@@ -73,7 +75,7 @@ export function Pay() {
             Send privately
           </Button>
           <p className="text-center text-xs text-zinc-600">
-            On-chain, observers see only two opaque commitments and a valid proof.
+            On-chain, observers see only two opaque commitments and a valid proof — no amount, no parties.
           </p>
         </div>
       </Card>

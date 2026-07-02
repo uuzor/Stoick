@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { ISupportedWallet } from '@creit.tech/stellar-wallets-kit'
 import {
   clearStoredWalletId,
@@ -36,14 +37,17 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback
 }
 
+const WalletContext = createContext<WalletState | null>(null)
+
 /**
- * Multi-wallet integration via the Stellar Wallets Kit. Drives the Connect button:
- * `connect()` opens the kit's wallet-select modal (Freighter, xBull, Albedo, Rabet,
- * Lobstr, Hana, …), records the choice, reads the active public key, and surfaces a
- * Testnet indicator. The selected wallet is persisted (localStorage) for smooth
- * reconnection. Degrades gracefully when no wallet is available.
+ * Single source of truth for the connected Stellar wallet, via the Stellar Wallets Kit.
+ * Provided once at the app root so the Connect button, the Deposit widget, and the
+ * shielded-identity derivation all observe the *same* address and connect events
+ * (independent `useState` copies would drift apart). `connect()` opens the kit's
+ * wallet-select modal, records the choice, reads the active public key, and surfaces a
+ * Testnet indicator. The selected wallet is persisted for smooth reconnection.
  */
-export function useWallet(): WalletState {
+export function WalletProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<WalletStatus>('checking')
   const [address, setAddress] = useState<string | null>(null)
   const [network, setNetwork] = useState<string | null>(null)
@@ -145,14 +149,25 @@ export function useWallet(): WalletState {
     setStatus('disconnected')
   }, [])
 
-  return {
-    status,
-    address,
-    network,
-    isTestnet: network === TESTNET,
-    installed,
-    error,
-    connect,
-    disconnect,
-  }
+  const value = useMemo<WalletState>(
+    () => ({
+      status,
+      address,
+      network,
+      isTestnet: network === TESTNET,
+      installed,
+      error,
+      connect,
+      disconnect,
+    }),
+    [status, address, network, installed, error, connect, disconnect],
+  )
+
+  return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
+}
+
+export function useWallet(): WalletState {
+  const ctx = useContext(WalletContext)
+  if (!ctx) throw new Error('useWallet must be used within a WalletProvider')
+  return ctx
 }

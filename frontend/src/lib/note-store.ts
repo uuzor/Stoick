@@ -12,8 +12,31 @@
 import { fieldToHex, hexToField, type BalanceNote, type Field } from '@wraith/sdk'
 import type { AssetCode } from './wraith-sdk'
 
-const KEY_SPENDING = 'wraith.spendingKey.v1'
-const KEY_NOTES = 'wraith.notes.v1'
+const NOTES_PREFIX = 'wraith.notes.v1'
+const SPENDING_PREFIX = 'wraith.spendingKey.v1'
+// The client indexer's persisted state (per identity): the full leaf set (to rebuild the
+// Merkle tree) and the last fully-indexed ledger (cold-start resumes from here).
+const LEAVES_PREFIX = 'wraith.leaves.v1'
+const CURSOR_PREFIX = 'wraith.indexcursor.v1'
+
+// The shielded identity is derived per Stellar address (see lib/shielded-identity).
+// `activeAddress` namespaces both the notes list and the cached spending key, so
+// switching wallets switches the shielded balance; `activeKey` is the in-memory key.
+let activeAddress: string | null = null
+let activeKey: Field | null = null
+
+function notesStorageKey(): string {
+  return `${NOTES_PREFIX}:${activeAddress ?? 'anon'}`
+}
+function spendingStorageKey(address: string): string {
+  return `${SPENDING_PREFIX}:${address}`
+}
+function leavesStorageKey(): string {
+  return `${LEAVES_PREFIX}:${activeAddress ?? 'anon'}`
+}
+function cursorStorageKey(): string {
+  return `${CURSOR_PREFIX}:${activeAddress ?? 'anon'}`
+}
 
 /** A persisted note: a {@link BalanceNote} plus app bookkeeping. */
 export interface StoredNote {
@@ -25,10 +48,13 @@ export interface StoredNote {
   spendingKey: string
   commitment: string
   leafIndex?: number
-  assetAddress?: string
+  assetAddress?: string // the token's SAC address (for withdraw)
+  decimals?: number // token fixed-point decimals (for formatting)
   spent: boolean
   createdAt: number
   txHash?: string
+  /** How this note entered the wallet (drives the deterministic deposit salt + provenance). */
+  source?: 'deposit' | 'received' | 'change'
 }
 
 function safeLocalStorage(): Storage | null {
@@ -60,33 +86,129 @@ function write(key: string, value: unknown): void {
   }
 }
 
-/** Lazily generate (and persist) the wallet's single spending key. */
-export function getSpendingKey(): Field {
+/** Point the store at a wallet's shielded identity namespace (clears the in-memory key). */
+export function setActiveAddress(address: string | null): void {
+  if (address === activeAddress) return
+  activeAddress = address
+  activeKey = null
+}
+
+/** True when a spending key for the active address is available (in memory or cached). */
+export function hasSpendingKey(): boolean {
+  if (activeKey) return true
+  if (!activeAddress) return false
+  return Boolean(safeLocalStorage()?.getItem(spendingStorageKey(activeAddress)))
+}
+
+/** Activate and persist a derived spending key for the active address. */
+export function setSpendingKey(key: Field): void {
+  activeKey = key
   const ls = safeLocalStorage()
-  const existing = ls?.getItem(KEY_SPENDING)
-  if (existing) return hexToField(existing)
-  // Generate a fresh 32-byte secret via the platform CSPRNG.
+  if (ls && activeAddress) ls.setItem(spendingStorageKey(activeAddress), fieldToHex(key))
+}
+
+/** Read a cached spending key for `address` without activating it (null if none). */
+export function peekCachedSpendingKey(address: string): Field | null {
+  const raw = safeLocalStorage()?.getItem(spendingStorageKey(address))
+  if (!raw) return null
+  // Tolerate both raw hex and older JSON-quoted values.
+  const hex = raw.startsWith('"') ? (JSON.parse(raw) as string) : raw
+  return hexToField(hex)
+}
+
+/** Forget the active shielded identity (on disconnect). */
+export function clearActiveIdentity(): void {
+  activeAddress = null
+  activeKey = null
+}
+
+/** Generate a fresh 32-byte spending key via the platform CSPRNG (not yet persisted). */
+export function randomSpendingKey(): Field {
   const buf = new Uint8Array(32)
   globalThis.crypto.getRandomValues(buf)
   let hex = '0x'
   for (const b of buf) hex += b.toString(16).padStart(2, '0')
-  const key = hexToField(hex)
-  write(KEY_SPENDING, fieldToHex(key))
-  return key
+  return hexToField(hex)
+}
+
+/**
+ * The active shielded spending key. Returns the in-memory key, or lazily loads the one
+ * cached for the active address. Throws when no identity has been established yet — the
+ * caller must connect a wallet so {@link setSpendingKey} runs first.
+ */
+export function getSpendingKey(): Field {
+  if (activeKey) return activeKey
+  if (activeAddress) {
+    const cached = peekCachedSpendingKey(activeAddress)
+    if (cached) {
+      activeKey = cached
+      return cached
+    }
+  }
+  throw new Error('Shielded identity is not ready. Connect your Stellar wallet to derive your spending key.')
 }
 
 export function loadNotes(): StoredNote[] {
-  return read<StoredNote[]>(KEY_NOTES, [])
+  return read<StoredNote[]>(notesStorageKey(), [])
+}
+
+/** The client indexer's persisted leaf set (all pool commitments in insertion order). */
+export function loadLeaves(): string[] {
+  return read<string[]>(leavesStorageKey(), [])
+}
+export function saveLeaves(leaves: string[]): void {
+  write(leavesStorageKey(), leaves)
+}
+
+/** The last ledger the indexer fully processed (0 = never indexed → cold start). */
+export function loadIndexCursor(): number {
+  return read<number>(cursorStorageKey(), 0)
+}
+export function saveIndexCursor(ledger: number): void {
+  write(cursorStorageKey(), ledger)
+}
+
+/**
+ * Wipe every locally-cached note (all wallet namespaces plus any legacy global key).
+ * Leaves the derived spending keys and wallet selection intact — so you stay connected
+ * and won't be re-prompted to sign, you just start from a zero shielded balance.
+ */
+export function clearAllNotes(): void {
+  const ls = safeLocalStorage()
+  if (!ls) return
+  const doomed: string[] = []
+  for (let i = 0; i < ls.length; i += 1) {
+    const k = ls.key(i)
+    // Notes for every wallet + the indexer's leaves/cursor + legacy scan cursors, so
+    // both discovery and the Merkle-tree rebuild re-run from the pool's deploy ledger.
+    if (
+      k &&
+      (k === NOTES_PREFIX ||
+        k.startsWith(`${NOTES_PREFIX}:`) ||
+        k.startsWith(`${LEAVES_PREFIX}:`) ||
+        k.startsWith(`${CURSOR_PREFIX}:`) ||
+        k.startsWith('wraith.scan.'))
+    ) {
+      doomed.push(k)
+    }
+  }
+  for (const k of doomed) ls.removeItem(k)
 }
 
 function saveNotes(notes: StoredNote[]): void {
-  write(KEY_NOTES, notes)
+  write(notesStorageKey(), notes)
 }
 
 /** Persist a freshly created note (keyed by commitment; replaces any prior copy). */
 export function addNote(
   note: BalanceNote,
-  meta: { assetCode: AssetCode; txHash?: string; leafIndex?: number },
+  meta: {
+    assetCode: AssetCode
+    txHash?: string
+    leafIndex?: number
+    decimals?: number
+    source?: 'deposit' | 'received' | 'change'
+  },
 ): void {
   const stored: StoredNote = {
     assetCode: meta.assetCode,
@@ -102,11 +224,51 @@ export function addNote(
   if (meta.leafIndex !== undefined) stored.leafIndex = meta.leafIndex
   else if (note.leafIndex !== undefined) stored.leafIndex = note.leafIndex
   if (note.assetAddress !== undefined) stored.assetAddress = note.assetAddress
+  if (meta.decimals !== undefined) stored.decimals = meta.decimals
+  if (meta.source !== undefined) stored.source = meta.source
   if (meta.txHash !== undefined) stored.txHash = meta.txHash
 
   const notes = loadNotes().filter((n) => n.commitment !== stored.commitment)
   notes.push(stored)
   saveNotes(notes)
+}
+
+/**
+ * Add a note discovered from an incoming transfer memo (or recovered by the indexer). No-op
+ * if already known. Returns true if added. The note is spendable via its `leafIndex` — the
+ * Merkle witness is rebuilt on demand from the indexer, so none is stored here.
+ */
+export function upsertReceivedNote(fields: {
+  assetCode: AssetCode
+  assetId: string
+  amount: string
+  ownerKey: string
+  blinding: string
+  spendingKey: string
+  commitment: string
+  leafIndex: number
+  decimals?: number
+  source?: 'deposit' | 'received' | 'change'
+}): boolean {
+  const notes = loadNotes()
+  if (notes.some((n) => n.commitment === fields.commitment)) return false
+  const stored: StoredNote = {
+    assetCode: fields.assetCode,
+    assetId: fields.assetId,
+    amount: fields.amount,
+    ownerKey: fields.ownerKey,
+    blinding: fields.blinding,
+    spendingKey: fields.spendingKey,
+    commitment: fields.commitment,
+    leafIndex: fields.leafIndex,
+    source: fields.source ?? 'received',
+    spent: false,
+    createdAt: Date.now(),
+  }
+  if (fields.decimals !== undefined) stored.decimals = fields.decimals
+  notes.push(stored)
+  saveNotes(notes)
+  return true
 }
 
 /** Mark a note spent by its commitment hex. */

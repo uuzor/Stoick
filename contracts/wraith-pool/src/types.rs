@@ -1,4 +1,4 @@
-use soroban_sdk::{contracterror, contractevent, contracttype, Address, BytesN, Vec};
+use soroban_sdk::{contracterror, contractevent, contracttype, Address, Bytes, BytesN, Vec};
 
 #[contracttype]
 #[derive(Clone)]
@@ -81,6 +81,12 @@ pub struct WithdrawEvent {
 pub struct TransferEvent {
     pub nullifiers: Vec<BytesN<32>>,
     pub commitments: Vec<BytesN<32>>,
+    /// Leaf indices of `commitments`, in order — lets a recipient locate the note's leaf.
+    pub indices: Vec<u32>,
+    /// Opaque per-output encrypted note payloads (sealed-box to the owner's viewing key),
+    /// aligned with `commitments`. Untrusted transport: a recipient trial-decrypts and
+    /// only accepts a note whose commitment is present above (SPEC — note discovery).
+    pub memos: Vec<Bytes>,
 }
 
 #[contractevent(topics = ["order_placed"], data_format = "map")]

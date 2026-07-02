@@ -38,6 +38,13 @@ import {
   fetchInclusionProof,
 } from "./inclusion.js";
 import { LightClientSubmitter } from "./lightclient.js";
+import {
+  SIGNAL_IMAGE_ID,
+  SIGNAL_RISC0_VERIFIER_TESTNET,
+  SignalClientSubmitter,
+  fetchLatestSignalProof,
+  parseJournal,
+} from "./signal.js";
 import { readLock, unlockOnL1, watchBridgeOut, watchLocked } from "./l1.js";
 
 export * from "./types.js";
@@ -45,6 +52,7 @@ export * from "./beacon.js";
 export * from "./scval.js";
 export * from "./soroban.js";
 export * from "./lightclient.js";
+export * from "./signal.js";
 export * from "./inclusion.js";
 export * from "./l1.js";
 export * from "./config.js";
@@ -157,6 +165,85 @@ async function relayHeader(cfg: RelayerConfig, flags: Record<string, string | tr
   }
   const hash = await submitter.submitUpdateHeader(update, stellarSubmitOpts(cfg, cfg.stellarSignerSecret));
   log(`\nsubmitted update_header -> ${hash}`);
+}
+
+// ---------------------------------------------------------------------------
+// relay-signal  (Boundless "The Signal" finality feed -> EthSignalClient.receive)
+// ---------------------------------------------------------------------------
+
+async function relaySignal(cfg: RelayerConfig, flags: Record<string, string | true>): Promise<void> {
+  const proof = await fetchLatestSignalProof();
+  const view = parseJournal(proof.journal);
+
+  log("fetched Signal proof (Boundless mainnet Ethereum finality):");
+  log(
+    JSON.stringify(
+      {
+        epoch: proof.epoch,
+        requestId: proof.requestId,
+        fulfillTxHash: proof.fulfillTxHash,
+        sealSelector: proof.seal.slice(0, 10),
+        sealBytes: (proof.seal.length - 2) / 2,
+        finalizedSlot: view.finalizedSlot,
+        finalizedEpoch: view.finalizedEpoch,
+        finalizedRoot: view.finalizedRoot,
+      },
+      jsonReplacer,
+      2,
+    ),
+  );
+
+  const id = cfg.signalClientContract;
+  if (!id) {
+    log("\nno SIGNAL_CLIENT_CONTRACT set — dry run only.");
+    return;
+  }
+  const submitter = new SignalClientSubmitter({
+    contractId: id,
+    ...(cfg.stellarNetworkPassphrase ? { networkPassphrase: cfg.stellarNetworkPassphrase } : {}),
+  });
+
+  const op = submitter.receiveOp(proof.seal, proof.journal);
+  if (!flags["submit"] || !cfg.stellarSignerSecret) {
+    log("\n[dry-run] receive op built. XDR(base64):");
+    log(op.toXDR("base64"));
+    log("Pass --submit + STELLAR_SIGNER_SECRET + STELLAR_RPC to send.");
+    log("(receive rejects any journal whose pre_state != the contract's current state — submit epochs in order.)");
+    return;
+  }
+  const hash = await submitter.submitReceive(
+    proof.seal,
+    proof.journal,
+    stellarSubmitOpts(cfg, cfg.stellarSignerSecret),
+  );
+  log(`\nsubmitted receive -> ${hash}`);
+}
+
+// ---------------------------------------------------------------------------
+// signal-seed  (print the EthSignalClient deploy constructor args, fresh)
+// ---------------------------------------------------------------------------
+
+async function signalSeed(_cfg: RelayerConfig, _flags: Record<string, string | true>): Promise<void> {
+  const proof = await fetchLatestSignalProof();
+  const view = parseJournal(proof.journal);
+  log("EthSignalClient deploy parameters (mainnet Ethereum finality -> Stellar):");
+  log(
+    JSON.stringify(
+      {
+        risc0_verifier: SIGNAL_RISC0_VERIFIER_TESTNET,
+        image_id: SIGNAL_IMAGE_ID,
+        // seed = the latest fulfilled journal's pre_state (128-byte ConsensusState).
+        initial_state: view.preState,
+        firstEpochToSubmit: proof.epoch,
+      },
+      jsonReplacer,
+      2,
+    ),
+  );
+  log(
+    "\nDeploy, then submit this same epoch first with `relay-signal --submit` (receive chains" +
+      " strictly from pre_state). The seed ages as finality advances — re-run signal-seed right before deploying.",
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -415,6 +502,8 @@ function usage(): void {
       "",
       "Commands:",
       "  relay-header [--post-root] [--submit]            fetch finality update -> update_header (or post_root fallback)",
+      "  relay-signal [--submit]                          fetch a Boundless Signal proof -> EthSignalClient.receive",
+      "  signal-seed                                      print fresh EthSignalClient deploy args (verifier, image_id, initial_state)",
       "  relay-in <commitment> [--block N] [--token 0x..] [--amount N] [--submit]",
       "                                                   eth_getProof -> bridge_in",
       "  seed-committee [--root 0x..]                     fetch + decompress the 512-pubkey committee (deploy-time)",
@@ -433,6 +522,10 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   switch (command) {
     case "relay-header":
       return relayHeader(cfg, flags);
+    case "relay-signal":
+      return relaySignal(cfg, flags);
+    case "signal-seed":
+      return signalSeed(cfg, flags);
     case "relay-in":
       return relayIn(cfg, positionals, flags);
     case "seed-committee":

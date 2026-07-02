@@ -6,31 +6,15 @@ import type {
   SVGProps,
 } from 'react'
 import { cx } from '../lib/cx'
-import { ASSETS } from '../lib/assets'
 import type { AssetCode } from '../lib/wraith-sdk'
 import { truncateKey } from '../lib/format'
+import { CoinBadge } from './BrandIcons'
+
+// The ghost mark now lives with the other brand glyphs; re-exported so existing
+// `import { GhostMark } from './ui'` call sites keep working.
+export { GhostMark } from './BrandIcons'
 
 // --- Icons (inherit currentColor) -------------------------------------------
-
-export function GhostMark(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 32 32" fill="none" aria-hidden {...props}>
-      <path
-        d="M16 4c-5 0-9 4-9 9v13l3-2.2 3 2.2 3-2.2 3 2.2 3-2.2 3 2.2V13c0-5-4-9-9-9z"
-        fill="currentColor"
-        opacity="0.18"
-      />
-      <path
-        d="M16 4c-5 0-9 4-9 9v13l3-2.2 3 2.2 3-2.2 3 2.2 3-2.2 3 2.2V13c0-5-4-9-9-9z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      <circle cx="12.5" cy="13.5" r="1.4" fill="currentColor" />
-      <circle cx="19.5" cy="13.5" r="1.4" fill="currentColor" />
-    </svg>
-  )
-}
 
 export function ChevronDownIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -236,25 +220,14 @@ export function Badge({
 }
 
 export function AssetAvatar({ code, className }: { code: AssetCode; className?: string }) {
-  const meta = ASSETS[code]
-  return (
-    <div
-      className={cx(
-        'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-mono text-[11px] font-bold tracking-tight',
-        meta.avatarClass,
-        className,
-      )}
-    >
-      {code}
-    </div>
-  )
+  return <CoinBadge name={code} size="lg" className={className} />
 }
 
 export function PageIntro({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-white">{title}</h1>
-      <p className="mt-1 text-sm text-zinc-500">{subtitle}</p>
+      <h1 className="text-2xl font-semibold leading-tight tracking-tight text-zinc-100">{title}</h1>
+      <p className="mt-1.5 max-w-xl text-sm text-zinc-400">{subtitle}</p>
     </div>
   )
 }
@@ -271,11 +244,7 @@ export function SectionHeading({
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2.5">
-        {icon && (
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-spectral/15 text-spectral-soft">
-            {icon}
-          </span>
-        )}
+        {icon && <span className="text-zinc-500">{icon}</span>}
         <h2 className="panel-title">{title}</h2>
       </div>
       {hint && <span className="font-mono text-xs text-zinc-500">{hint}</span>}
@@ -312,7 +281,7 @@ export function ToggleGroup<T extends string>({
               'rounded-lg py-2 text-sm font-semibold transition',
               active
                 ? (option.activeClassName ??
-                    'bg-spectral/15 text-white shadow-[inset_0_0_0_1px_rgba(124,108,255,0.4)]')
+                    'bg-spectral/15 text-zinc-100 shadow-[inset_0_0_0_1px_rgba(214,192,131,0.4)]')
                 : 'text-zinc-400 hover:text-zinc-200',
             )}
           >
