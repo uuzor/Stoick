@@ -81,22 +81,31 @@ function AppFooter() {
   }
   return (
     <footer className="cream-panel relative mt-auto">
-      <div className="wr-grain absolute inset-0 opacity-40" aria-hidden />
-      <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6 px-8 py-10 sm:flex-row sm:items-center sm:justify-between">
+      {/* Grain eases in over the top edge so it settles into the wash above
+          instead of popping at the boundary. */}
+      <div
+        aria-hidden
+        className="wr-grain absolute inset-0 opacity-40"
+        style={{
+          WebkitMaskImage: 'linear-gradient(to bottom, transparent, #000 4rem)',
+          maskImage: 'linear-gradient(to bottom, transparent, #000 4rem)',
+        }}
+      />
+      <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-5 px-8 py-8 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <WraithMark className="h-8 w-8" style={{ filter: 'brightness(0)' }} />
-          <p className="max-w-xs text-[13px] font-medium leading-snug">
+          <WraithMark className="h-7 w-7 shrink-0" style={{ filter: 'brightness(0)', opacity: 0.85 }} />
+          <p className="max-w-[18rem] text-[12.5px] font-normal leading-relaxed text-[#1b1610]/70">
             Private money on Stellar. Bridge in, hold, pay and trade — proven on-chain, never revealed.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-6 font-mono text-[12px] uppercase tracking-[0.14em] text-[#1b1610]/70">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-[11px] uppercase tracking-[0.16em] text-[#1b1610]/55">
           <NavLink to="/faucet" className="transition hover:text-[#1b1610]">
-            Test token faucet
+            Faucet
           </NavLink>
           <button type="button" onClick={() => void clearLocalData()} className="uppercase transition hover:text-[#1b1610]">
-            Clear local data
+            Clear data
           </button>
-          <span>© Wraith 2026</span>
+          <span className="text-[#1b1610]/45">© Wraith 2026</span>
         </div>
       </div>
     </footer>
@@ -113,10 +122,18 @@ export function AppLayout() {
       <main className="relative flex-1">
         <Outlet />
       </main>
-      <div aria-hidden className="pointer-events-none relative h-[20vh]">
-        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(28,23,16,0),#1c1710_28%,#f4efe4)]" />
-        <div className="wr-grain absolute inset-0 opacity-40" />
-      </div>
+      {/* Long, eased cream wash so the fixed dark canvas dissolves into the footer
+          over a tall multi-stop ramp — the section change reads as one surface.
+          No grain of its own: the fixed canvas grain shows through the transparent
+          top and is naturally covered as the wash turns opaque. */}
+      <div
+        aria-hidden
+        className="pointer-events-none relative h-[30rem]"
+        style={{
+          background:
+            'linear-gradient(to bottom, rgba(244,239,228,0) 0%, rgba(244,239,228,0) 20%, rgba(244,239,228,0.14) 42%, rgba(244,239,228,0.42) 62%, rgba(244,239,228,0.74) 78%, rgba(244,239,228,0.93) 91%, #f4efe4 100%)',
+        }}
+      />
       <AppFooter />
     </div>
   )
