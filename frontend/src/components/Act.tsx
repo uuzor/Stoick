@@ -12,6 +12,7 @@ export function Act({
   standfirst,
   coords,
   titleAside,
+  maxWidthClassName = 'max-w-2xl',
   children,
 }: {
   no: string
@@ -20,11 +21,12 @@ export function Act({
   standfirst: string
   coords: string[]
   titleAside?: ReactNode
+  maxWidthClassName?: string
   children: ReactNode
 }) {
   return (
     <section id={id} className="scroll-mt-24 border-t border-[#efe9dc]/10">
-      <div className="mx-auto w-full max-w-2xl px-5 py-16 sm:py-24">
+      <div className={`mx-auto w-full ${maxWidthClassName} px-5 py-16 sm:py-24`}>
         <div className="mb-9 flex items-start justify-between gap-6">
           <div>
             <div className="coord-label mb-3">{no}</div>

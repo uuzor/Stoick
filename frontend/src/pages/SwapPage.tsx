@@ -37,6 +37,7 @@ export function SwapPage() {
       standfirst="A dark pool where orders stay sealed until they match at the midpoint — so there is nothing to front-run."
       coords={['Sealed orders', 'Midpoint match']}
       titleAside={showOperator ? <OperatorInfo /> : undefined}
+      maxWidthClassName="max-w-6xl"
     >
       <Swap embedded />
     </Act>

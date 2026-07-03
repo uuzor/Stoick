@@ -4,19 +4,23 @@ import { useProofFlow } from '../hooks/useProofFlow'
 import { formatAmount, parseAmount } from '../lib/format'
 import type { OpenOrder, OrderSide } from '../lib/wraith-sdk'
 import { TOKEN_OPTIONS } from '../lib/tokens'
+import { cx } from '../lib/cx'
 import {
   Badge,
   Button,
   Card,
   ChartIcon,
+  ChevronDownIcon,
   Field,
   PageIntro,
   SectionHeading,
   Select,
   TextInput,
   ToggleGroup,
+  XIcon,
 } from './ui'
 import { ProofProgress } from './ProofProgress'
+import { PriceChart } from './PriceChart'
 
 function timeAgo(timestamp: number): string {
   const mins = Math.max(0, Math.round((Date.now() - timestamp) / 60000))
@@ -79,6 +83,78 @@ function OrderSkeleton() {
   )
 }
 
+/** Open orders — a companion panel beside the order form. Collapses to a
+ *  full-height vertical band on the side; controlled by the parent so the row
+ *  can animate the recentre when it opens / closes. */
+function OpenOrders({
+  orders,
+  loadingOrders,
+  cancelingId,
+  onCancel,
+  open,
+  onToggle,
+}: {
+  orders: OpenOrder[]
+  loadingOrders: boolean
+  cancelingId: string | null
+  onCancel: (id: string) => void
+  open: boolean
+  onToggle: () => void
+}) {
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label="Expand open orders"
+        className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-2xl border border-ink-700 bg-ink-900/40 py-4 transition hover:border-spectral/40"
+      >
+        <ChartIcon className="h-4 w-4 shrink-0 text-spectral/70" />
+        <span className="whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-400 rotate-180 [writing-mode:vertical-rl]">
+          Open orders · {orders.length}
+        </span>
+      </button>
+    )
+  }
+
+  return (
+    <Card className="h-fit w-full p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h3 className="panel-title text-sm">Open orders</h3>
+          <span className="font-mono text-xs text-zinc-500">{orders.length}</span>
+        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label="Collapse open orders"
+          className="text-zinc-500 transition hover:text-zinc-200"
+        >
+          <ChevronDownIcon className="h-4 w-4 -rotate-90" />
+        </button>
+      </div>
+      <div className="mt-2 max-h-[50vh] overflow-auto">
+        {loadingOrders ? (
+          <OrderSkeleton />
+        ) : orders.length === 0 ? (
+          <p className="py-10 text-center text-sm text-zinc-500">No open orders.</p>
+        ) : (
+          <ul className="divide-y divide-ink-800">
+            {orders.map((order) => (
+              <OrderRow
+                key={order.id}
+                order={order}
+                canceling={cancelingId === order.id}
+                onCancel={() => void onCancel(order.id)}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+    </Card>
+  )
+}
+
 export function Swap({ embedded }: { embedded?: boolean } = {}) {
   const { sdk, orders, loadingOrders, refreshOrders, refreshBalances } = useWraith()
   const proof = useProofFlow()
@@ -89,6 +165,8 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
   const [price, setPrice] = useState('')
   const [amount, setAmount] = useState('')
   const [cancelingId, setCancelingId] = useState<string | null>(null)
+  const [showChart, setShowChart] = useState(true)
+  const [ordersOpen, setOrdersOpen] = useState(true)
 
   const valid = base !== quote && parseAmount(price) > 0 && parseAmount(amount) > 0
   const total = valid ? parseAmount(price) * parseAmount(amount) : 0
@@ -127,8 +205,52 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
         <PageIntro title="Swap" subtitle="Dark-pool DEX. Orders stay sealed until matched, so there is no front-running." />
       )}
 
-      <div className={embedded ? 'space-y-5' : 'grid gap-5 lg:grid-cols-5'}>
-        <Card className="p-6 lg:col-span-2">
+      <div className="flex items-stretch justify-center gap-4">
+        <div
+          className={cx(
+            'hidden shrink-0 overflow-hidden transition-[width] duration-300 ease-out lg:block',
+            showChart ? 'w-[22rem]' : 'w-12',
+          )}
+        >
+          {showChart ? (
+            <Card className="flex h-full flex-col p-4">
+              <div className="mb-1 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ChartIcon className="h-4 w-4 text-zinc-500" />
+                  <span className="panel-title whitespace-nowrap text-sm">
+                    {base} / {quote}
+                  </span>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-600">preview</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowChart(false)}
+                  aria-label="Hide chart"
+                  className="text-zinc-500 transition hover:text-zinc-200"
+                >
+                  <XIcon className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1">
+                <PriceChart pair={`${base}/${quote}`} />
+              </div>
+            </Card>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowChart(true)}
+              aria-label="Add chart"
+              className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-2xl border border-ink-700 bg-ink-900/40 py-4 transition hover:border-spectral/40"
+            >
+              <ChartIcon className="h-4 w-4 shrink-0 text-spectral/70" />
+              <span className="whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-400 [writing-mode:vertical-rl]">
+                Chart
+              </span>
+            </button>
+          )}
+        </div>
+
+        <Card className="w-full shrink-0 self-start p-6 lg:w-[26rem]">
           <SectionHeading icon={<ChartIcon className="h-4 w-4" />} title="Place order" />
 
           <div className="mb-4 mt-3 grid grid-cols-2 gap-3">
@@ -139,9 +261,7 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
               <Select value={quote} onChange={(e) => setQuote(e.target.value)} options={TOKEN_OPTIONS} />
             </Field>
           </div>
-          {base === quote && (
-            <p className="mb-3 text-xs text-spectral/80">Pick two different tokens.</p>
-          )}
+          {base === quote && <p className="mb-3 text-xs text-spectral/80">Pick two different tokens.</p>}
 
           <div className="space-y-4">
             <ToggleGroup
@@ -182,27 +302,21 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
           </div>
         </Card>
 
-        <Card className="p-6 lg:col-span-3">
-          <SectionHeading title="Open orders" hint={`${orders.length} active`} />
-          <div className="mt-2">
-            {loadingOrders ? (
-              <OrderSkeleton />
-            ) : orders.length === 0 ? (
-              <p className="py-12 text-center text-sm text-zinc-500">No open orders.</p>
-            ) : (
-              <ul className="divide-y divide-ink-800">
-                {orders.map((order) => (
-                  <OrderRow
-                    key={order.id}
-                    order={order}
-                    canceling={cancelingId === order.id}
-                    onCancel={() => void onCancel(order.id)}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-        </Card>
+        <div
+          className={cx(
+            'hidden shrink-0 overflow-hidden transition-[width] duration-300 ease-out lg:block',
+            ordersOpen ? 'w-72' : 'w-12',
+          )}
+        >
+          <OpenOrders
+            orders={orders}
+            loadingOrders={loadingOrders}
+            cancelingId={cancelingId}
+            onCancel={onCancel}
+            open={ordersOpen}
+            onToggle={() => setOrdersOpen((v) => !v)}
+          />
+        </div>
       </div>
 
       <ProofProgress
