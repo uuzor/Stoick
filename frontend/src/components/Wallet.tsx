@@ -44,7 +44,7 @@ function ActNav() {
     ['04 Cipher', 'act-cipher'],
   ] as const
   return (
-    <header className="fixed inset-x-0 top-0 z-40 border-b border-[#efe9dc]/8 bg-[#1c1710]/55 backdrop-blur-md">
+    <header className="relative z-40 border-b border-[#efe9dc]/8 bg-[#1c1710]/40 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-3">
         <button type="button" onClick={() => window.scrollTo({ top: 0 })} className="flex items-center gap-2">
           <WraithMark className="h-5 w-5 text-spectral" />
@@ -80,7 +80,7 @@ function Masthead({
 }) {
   const total = balances.reduce((sum, b) => sum + b.usdEstimate, 0)
   return (
-    <section className="relative flex min-h-[92vh] flex-col items-center justify-center px-5 pb-16 pt-24 text-center">
+    <section className="relative flex min-h-[88vh] flex-col items-center justify-center px-5 pb-16 pt-12 text-center">
       <div className="flex items-center gap-3">
         <span className="coord-label">shielded · [ poseidon · merkle ]</span>
         <button
@@ -229,7 +229,7 @@ function Receive({ receiveCode }: { receiveCode: string | null }) {
 
 function AppFooter({ onClearLocal }: { onClearLocal: () => void }) {
   return (
-    <footer className="cream-panel border-t border-[#1b1610]/10">
+    <footer className="cream-panel">
       <div className="wr-grain absolute inset-0 opacity-40" aria-hidden />
       <div className="relative mx-auto flex min-h-[68vh] w-full max-w-5xl flex-col justify-between px-8 py-16">
         <div className="flex items-start justify-between gap-6">
@@ -329,6 +329,14 @@ export function Wallet() {
         <Receive receiveCode={receiveCode} />
       </Act>
 
+      {/* Seam: the dark shielded film dissolves into the cream footer. Opaque
+          ground→cream (a transparent lead-in of the SAME dark seats it on the
+          fluid — never translucent cream over the field, which muds), and the
+          footer's own grain runs over it so the junction has no bright band. */}
+      <div aria-hidden className="pointer-events-none relative h-[46vh]">
+        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(28,23,16,0),#1c1710_22%,#f4efe4)]" />
+        <div className="wr-grain absolute inset-0 opacity-40" />
+      </div>
       <AppFooter onClearLocal={() => void clearLocalData()} />
     </div>
   )
