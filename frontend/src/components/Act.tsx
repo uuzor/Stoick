@@ -11,6 +11,7 @@ export function Act({
   title,
   standfirst,
   coords,
+  titleAside,
   children,
 }: {
   no: string
@@ -18,6 +19,7 @@ export function Act({
   title: string
   standfirst: string
   coords: string[]
+  titleAside?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -26,7 +28,10 @@ export function Act({
         <div className="mb-9 flex items-start justify-between gap-6">
           <div>
             <div className="coord-label mb-3">{no}</div>
-            <h2 className="display-hd text-[2rem] leading-none sm:text-[2.6rem]">{title}</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="display-hd text-[2rem] leading-none sm:text-[2.6rem]">{title}</h2>
+              {titleAside}
+            </div>
             <p className="mt-4 max-w-md text-sm leading-relaxed text-zinc-300">{standfirst}</p>
           </div>
           <ul className="hidden shrink-0 space-y-1.5 pt-1 text-right sm:block">

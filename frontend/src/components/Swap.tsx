@@ -38,7 +38,7 @@ function OrderRow({
   const buy = order.side === 'buy'
   return (
     <li className="flex items-center gap-4 py-3.5">
-      <Badge tone={buy ? 'success' : 'danger'} className="uppercase">
+      <Badge tone={buy ? 'accent' : 'neutral'} className="uppercase">
         {order.side}
       </Badge>
       <div className="min-w-0">
@@ -55,7 +55,7 @@ function OrderRow({
           {order.amount} {order.base}
         </div>
       </div>
-      <Button variant="danger" size="sm" loading={canceling} onClick={onCancel}>
+      <Button variant="outline" size="sm" loading={canceling} onClick={onCancel}>
         Cancel
       </Button>
     </li>
@@ -140,7 +140,7 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
             </Field>
           </div>
           {base === quote && (
-            <p className="mb-3 text-xs text-amber-400">Pick two different tokens.</p>
+            <p className="mb-3 text-xs text-spectral/80">Pick two different tokens.</p>
           )}
 
           <div className="space-y-4">
@@ -148,18 +148,8 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
               value={side}
               onChange={setSide}
               options={[
-                {
-                  value: 'buy',
-                  label: 'Buy',
-                  activeClassName:
-                    'bg-emerald-500/15 text-emerald-300 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.4)]',
-                },
-                {
-                  value: 'sell',
-                  label: 'Sell',
-                  activeClassName:
-                    'bg-red-500/15 text-red-300 shadow-[inset_0_0_0_1px_rgba(248,113,113,0.4)]',
-                },
+                { value: 'buy', label: 'Buy' },
+                { value: 'sell', label: 'Sell' },
               ]}
             />
             <Field label={`Price (${quote} per ${base})`}>
