@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { CSSProperties } from 'react'
 import FluidVolume from './FluidVolume'
 import ScrambleCycle from './ScrambleCycle'
+import { StoryShielded } from './StoryShielded'
 import markUrl from '../assets/wraith-mark.png'
 
 const ROTATING = ['shielded', 'unlinkable', 'verified', 'private', 'yours']
@@ -187,6 +188,8 @@ export function Landing({ onEnter }: { onEnter: () => void }) {
         }}
       />
       </section>
+
+      <StoryShielded onEnter={onEnter} />
 
       <footer className="relative flex min-h-screen flex-col justify-between overflow-hidden bg-[#f4efe4] px-8 py-16 text-[#1b1610]">
         <div
