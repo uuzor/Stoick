@@ -53,9 +53,9 @@ function LoopAsset({ src, poster, className }: { src: string; poster: string; cl
   )
 }
 
-function Label({ children }: { children: ReactNode }) {
+function Label({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] uppercase tracking-[0.18em]">
+    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] uppercase tracking-[0.18em] ${className}`}>
       {children}
     </div>
   )
@@ -97,9 +97,9 @@ export function StoryShielded({ onEnter }: { onEnter: () => void }) {
                 every block on an open chain is permanent, public and linkable — amounts, balances,
                 counterparties, readable by anyone with the address, forever. the ledger never forgets.
               </p>
-              <Label>
-                <span className="mt-6 whitespace-nowrap text-[#3B382D]">public ledger</span>
-                <span className="mt-6 whitespace-nowrap text-[#9A9583]">[ every block · forever ]</span>
+              <Label className="mt-6">
+                <span className="whitespace-nowrap text-[#3B382D]">public ledger</span>
+                <span className="whitespace-nowrap text-[#9A9583]">[ every block · forever ]</span>
               </Label>
             </div>
             <div className="order-1 mx-auto w-[clamp(240px,40vw,460px)] md:order-2">
