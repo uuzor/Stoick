@@ -8,7 +8,7 @@ import type {
 import { cx } from '../lib/cx'
 import type { AssetCode } from '../lib/wraith-sdk'
 import { truncateKey } from '../lib/format'
-import { CoinBadge } from './BrandIcons'
+import { CoinBadge, WraithMark } from './BrandIcons'
 
 // The wraith mark lives with the other brand glyphs; re-exported so `import
 // { WraithMark } from './ui'` call sites resolve here.
@@ -101,12 +101,7 @@ export function ChartIcon(props: SVGProps<SVGSVGElement>) {
 }
 
 export function Spinner({ className }: { className?: string }) {
-  return (
-    <svg className={cx('animate-spin', className)} viewBox="0 0 24 24" fill="none" aria-hidden>
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-20" />
-      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="opacity-90" />
-    </svg>
-  )
+  return <WraithMark className={cx('animate-spin', className)} />
 }
 
 // --- Primitives -------------------------------------------------------------
