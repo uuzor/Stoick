@@ -12,14 +12,10 @@ export default defineConfig({
     global: 'globalThis',
   },
   optimizeDeps: {
-    // The Noir/Barretenberg proving stack is only reached via the experimental,
-    // flag-gated in-browser withdraw path (dynamic import). Keep it out of the dev
-    // pre-bundle and the production graph so the default deposit/portfolio build is lean.
+    // bb.js breaks esbuild's dev pre-bundle (WASM + workers), so keep it native-ESM in dev.
+    // It must still be bundled for production (the swap/withdraw proof paths dynamic-import
+    // the prover), so it is NOT marked rollup-external — otherwise the browser gets a bare
+    // `@noir-lang/noir_js` specifier it can't resolve.
     exclude: ['@aztec/bb.js', '@noir-lang/noir_js'],
-  },
-  build: {
-    rollupOptions: {
-      external: ['@aztec/bb.js', '@noir-lang/noir_js'],
-    },
   },
 })
