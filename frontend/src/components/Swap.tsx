@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useWraith } from '../hooks/useWraith'
 import { useProofFlow } from '../hooks/useProofFlow'
-import { formatAmount, parseAmount } from '../lib/format'
+import { usePriceQuote } from '../hooks/usePriceQuote'
+import { formatAmount, formatPrice, parseAmount } from '../lib/format'
 import type { OpenOrder, OrderSide } from '../lib/wraith-sdk'
 import { TOKEN_OPTIONS } from '../lib/tokens'
 import { cx } from '../lib/cx'
@@ -168,6 +169,28 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
   const [showChart, setShowChart] = useState(true)
   const [ordersOpen, setOrdersOpen] = useState(true)
 
+  const { price: marketPrice, live: livePrice } = usePriceQuote(base, quote)
+  const priceEdited = useRef(false)
+
+  useEffect(() => {
+    priceEdited.current = false
+  }, [base, quote])
+
+  useEffect(() => {
+    if (marketPrice != null && !priceEdited.current) setPrice(formatPrice(marketPrice))
+  }, [base, quote, marketPrice])
+
+  function onPriceChange(value: string) {
+    priceEdited.current = true
+    setPrice(value)
+  }
+
+  function useMarketPrice() {
+    if (marketPrice == null) return
+    priceEdited.current = false
+    setPrice(formatPrice(marketPrice))
+  }
+
   const valid = base !== quote && parseAmount(price) > 0 && parseAmount(amount) > 0
   const total = valid ? parseAmount(price) * parseAmount(amount) : 0
 
@@ -215,12 +238,24 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
           {showChart ? (
             <Card className="flex h-full flex-col p-4">
               <div className="mb-1 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <ChartIcon className="h-4 w-4 text-zinc-500" />
+                <div className="flex min-w-0 items-center gap-2">
+                  <ChartIcon className="h-4 w-4 shrink-0 text-zinc-500" />
                   <span className="panel-title whitespace-nowrap text-sm">
                     {base} / {quote}
                   </span>
-                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-600">preview</span>
+                  {marketPrice != null && (
+                    <span className="truncate font-mono text-[11px] tabular-nums text-zinc-300">
+                      {formatPrice(marketPrice)}
+                    </span>
+                  )}
+                  <span
+                    className={cx(
+                      'font-mono text-[10px] uppercase tracking-[0.16em]',
+                      livePrice ? 'text-spectral/70' : 'text-zinc-600',
+                    )}
+                  >
+                    {livePrice ? 'live' : 'est'}
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -232,7 +267,7 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
                 </button>
               </div>
               <div className="min-h-0 flex-1">
-                <PriceChart pair={`${base}/${quote}`} />
+                <PriceChart pair={`${base}/${quote}`} price={marketPrice} />
               </div>
             </Card>
           ) : (
@@ -272,13 +307,35 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
                 { value: 'sell', label: 'Sell' },
               ]}
             />
-            <Field label={`Price (${quote} per ${base})`}>
+            <Field
+              label={`Price (${quote} per ${base})`}
+              hint={
+                marketPrice != null ? (
+                  <span className="flex items-center gap-1.5">
+                    <span>
+                      Market{' '}
+                      <span className="font-mono tabular-nums text-zinc-300">
+                        {formatPrice(marketPrice)}
+                      </span>{' '}
+                      {quote} · {livePrice ? 'live' : 'est'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={useMarketPrice}
+                      className="font-mono text-spectral/80 transition hover:text-spectral"
+                    >
+                      use
+                    </button>
+                  </span>
+                ) : undefined
+              }
+            >
               <TextInput
                 mono
                 inputMode="decimal"
                 placeholder="0.0000"
                 value={price}
-                onChange={(e) => setPrice(e.target.value)}
+                onChange={(e) => onPriceChange(e.target.value)}
               />
             </Field>
             <Field label={`Amount (${base})`}>

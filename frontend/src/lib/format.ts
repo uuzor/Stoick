@@ -14,6 +14,15 @@ export function formatAmount(value: number): string {
   return amountFmt.format(value)
 }
 
+/** Format a price (quote per base) as a clean, editable decimal string with
+ *  magnitude-aware precision. Empty string for non-positive/invalid values. */
+export function formatPrice(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return ''
+  const abs = Math.abs(value)
+  const decimals = abs >= 1000 ? 2 : abs >= 1 ? 4 : abs >= 0.01 ? 6 : 8
+  return value.toFixed(decimals).replace(/\.?0+$/, '')
+}
+
 const usdFmt = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
