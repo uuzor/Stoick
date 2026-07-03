@@ -41,3 +41,5 @@ deployments.json
 # Bridge committee dump (reproducible public data, ~99KB) — regenerate with
 # node bridge/deploy/fetch-committee.mjs
 bridge/deploy/committee.json
+.vercel
+.env*.local
