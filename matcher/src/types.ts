@@ -41,6 +41,15 @@ export interface SubmittedOrder {
   /** Order nonce (Field) — part of the commitment preimage, supplied so the proof can reopen it. */
   nonce: string;
 
+  /** The trader's Wraith receive code (`wr1…` = ownerKey ‖ encPub). Required by the live intake
+   *  so the matcher can seal the settlement notes/residual to the owner's viewing key (on-chain
+   *  memo delivery). Optional in the type so tests can build orders without one. */
+  receiveCode?: string;
+  /** Optional display codes for the pair, echoed into the settlement memos so the recipient's
+   *  wallet labels the fill correctly (the amount/asset are authoritative regardless). */
+  baseCode?: string;
+  quoteCode?: string;
+
   // ---- engine bookkeeping (assigned by MatchingEngine.submit) ----
   /** Monotonic submission index, used as the time-priority tie-breaker. */
   sequence?: number;

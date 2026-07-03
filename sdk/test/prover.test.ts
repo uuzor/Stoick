@@ -93,10 +93,12 @@ describe("circuit input builders (SPEC sec 8 field names)", () => {
       amount: 1000n,
       assetBase: 5n,
       assetQuote: 9n,
+      nonce: 123n,
       spendingKey: 42n,
       refundBlinding: 7n,
     });
     expect(Object.keys(co)).toContain("refund_commitment");
+    expect(co.nonce).toBe("0x000000000000000000000000000000000000000000000000000000000000007b");
   });
 });
 

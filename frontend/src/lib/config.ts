@@ -31,14 +31,15 @@ function flag(key: string): boolean {
 /**
  * WraithPool contract id on the configured network.
  *
- * Points at the memo-enabled pool (redeployed 2026-07-01): its `transfer` carries an
- * encrypted note payload in `TransferEvent`, which the recipient scans to auto-discover
- * incoming notes (note discovery). Fresh tree; reuses the existing verifier contracts.
- * The pre-memo pool was CD7EF4GG32IPVS2PGD2LMXEO3TPEWBZRUCBBSPXQ236CD6TMF5S4UUZR.
+ * Points at the match-memo pool (redeployed 2026-07-02): `transfer` AND `match_orders` carry
+ * encrypted note payloads (+ full leaf set/indices) in their events, which the recipient's
+ * indexer scans to auto-discover incoming notes and settlement fills. Fresh tree; reuses the
+ * existing verifier contracts. Prior pools: memo pool CBVM7B622FSW47FDNUVU7GEU7TNRVRWEVOTNAUWVUOHFMIPSTDL2YVNG,
+ * pre-memo pool CD7EF4GG32IPVS2PGD2LMXEO3TPEWBZRUCBBSPXQ236CD6TMF5S4UUZR.
  */
 export const POOL_CONTRACT_ID = env(
   'VITE_WRAITH_POOL',
-  'CBVM7B622FSW47FDNUVU7GEU7TNRVRWEVOTNAUWVUOHFMIPSTDL2YVNG',
+  'CA2CI7VKG27V3FIXD3OYXFYTN33DMI5QR4WFBX3N5SRC6JWEO3AWDILD',
 )
 
 /** Native (XLM) Stellar Asset Contract address. */
@@ -50,9 +51,13 @@ export const NATIVE_SAC = env(
 /** Soroban RPC endpoint (Testnet by default). */
 export const SOROBAN_RPC_URL = env('VITE_SOROBAN_RPC_URL', 'https://soroban-testnet.stellar.org')
 
+/** Off-chain dark-pool matcher base URL (e.g. http://localhost:8787). Empty = matching
+ *  disabled: orders still place + cancel on-chain, they just won't be matched/filled. */
+export const MATCHER_URL = env('VITE_MATCHER_URL', '')
+
 /** Ledger the pool was deployed at — the client indexer's cold-start floor (clamped to the
  *  RPC's event-retention window, so older history is unavailable). */
-export const POOL_DEPLOY_LEDGER = Number(env('VITE_POOL_DEPLOY_LEDGER', '3382667'))
+export const POOL_DEPLOY_LEDGER = Number(env('VITE_POOL_DEPLOY_LEDGER', '3402675'))
 
 /** Stellar network passphrase. */
 export const NETWORK_PASSPHRASE = env('VITE_NETWORK_PASSPHRASE', 'Test SDF Network ; September 2015')

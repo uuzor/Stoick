@@ -3,11 +3,16 @@
   "networkPassphrase": "Test SDF Network ; September 2015",
   "deployer": "GAGEXK4SPRFYJMR3HXYXMCDBEWBFO4BHJP4XWO3L43HJU366UWPY4MKX",
   "deployedAt": "2026-06-29",
-  "toolchain": { "nargo": "1.0.0-beta.9", "bb": "0.87.0", "soroban-sdk": "26.0.1", "stellar-cli": "27.0.0" },
+  "toolchain": {
+    "nargo": "1.0.0-beta.9",
+    "bb": "0.87.0",
+    "soroban-sdk": "26.0.1",
+    "stellar-cli": "27.0.0"
+  },
   "contracts": {
     "wraithPool": "CD7EF4GG32IPVS2PGD2LMXEO3TPEWBZRUCBBSPXQ236CD6TMF5S4UUZR",
     "wraithPoolMemo": {
-      "note": "Memo-enabled pool (2026-07-01): transfer emits an encrypted note payload in TransferEvent for recipient note-discovery. Reuses the verifiers below. This is the pool the frontend now targets.",
+      "note": "Memo-enabled pool (2026-07-01): transfer emits an encrypted note payload in TransferEvent for recipient note-discovery. Reuses the verifiers below. Superseded by wraithPoolMatchMemo (2026-07-02).",
       "contract": "CBVM7B622FSW47FDNUVU7GEU7TNRVRWEVOTNAUWVUOHFMIPSTDL2YVNG",
       "wasmHash": "9f8fc87159dff0c04b18011e1b83c3996ddaa174ae96bdcd7edf5a0dc7973bdc",
       "deployer": "GCMLVYL34B7ZQ5C7D7QUGIBLQ45ACTBJT6QJO4Z36AMJ4OQ6TXSSWVGK"
@@ -26,7 +31,16 @@
       "match_orders": "CB5HNMW6IIMLQPSAKAC3ADTDHEOTKX6EHYCXNK5EITTFMO33BMD2EKM4",
       "cancel_order": "CAI6B5ZTWOGJIBLNMOG67H3MAPSORU64ZEXBB7YYQ6TQ5RQJMSQQSA3B"
     },
-    "assets": { "native": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC" }
+    "assets": {
+      "native": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+    },
+    "wraithPoolMatchMemo": {
+      "note": "Match-memo pool (2026-07-02): match_orders now takes leaf_memos + residual_memos and OrderMatchedEvent carries the full leaf set + indices + memos (like transfer), so settlement fills are self-custodially discoverable and the indexer can rebuild the tree through a match. Fresh tree; reuses the verifiers below. This is the pool the frontend now targets.",
+      "contract": "CA2CI7VKG27V3FIXD3OYXFYTN33DMI5QR4WFBX3N5SRC6JWEO3AWDILD",
+      "wasmHash": "077e1cafc4a81b85371fa42440b2bcd907098c5d3c8ae730ba3726e2fa775f60",
+      "deployLedger": 3402675,
+      "deployer": "GCMLVYL34B7ZQ5C7D7QUGIBLQ45ACTBJT6QJO4Z36AMJ4OQ6TXSSWVGK"
+    }
   },
   "e2e": {
     "verifyProofValid": "0e7c0dcaaef6be5f35e09d37960864b500c5046d97ad145b5611221fcdcaf8a0",
@@ -71,7 +85,10 @@
       "signatureSlot": 10591824,
       "finalizedExecutionBlock": 11173658,
       "executionStateRoot": "5e294caed189617cdb5473fc1b9f733f56f0db775b36a585d173b3833cd2ba76",
-      "headAfter": [11173658, "5e294caed189617cdb5473fc1b9f733f56f0db775b36a585d173b3833cd2ba76"],
+      "headAfter": [
+        11173658,
+        "5e294caed189617cdb5473fc1b9f733f56f0db775b36a585d173b3833cd2ba76"
+      ],
       "sepoliaBlockStateRootCrossCheck": "0x5e294caed189617cdb5473fc1b9f733f56f0db775b36a585d173b3833cd2ba76",
       "updateHeaderLedger": 3364177,
       "verifiedLive": true
@@ -80,9 +97,22 @@
       "description": "Complete trustless L1->L2 loop verified live: lock 0.001 ETH on Sepolia -> light client verifies the sync-committee BLS header on Stellar -> WraithBridge.bridge_in proves the lock via in-contract MPT against the trusted state_root -> shielded note minted into the pool. No trusted relayer.",
       "mintedCommitment": "0x1b7ed1ccdbeee9b20e719fb6d2857d7ad04bdbb2c6d1fb113bb5ba1723141963",
       "amountWei": "1000000000000000",
-      "l1Lock": { "tx": "0xcf24c4d7a905ee39d2f1cbf907b3c179da8e3b11e6b329e455a65ea48f6ce802", "block": 11173795 },
-      "headAdvance": { "tx": "df258a684a4ce4c205954b342d509f46a6f6acc37b8922135d4251c571d26d9d", "finalizedBlock": 11173818, "stateRoot": "be389ba008f23d51e83c16161fd570ff9d775b63e6e8b3aa12d9202e9d78a4cc" },
-      "bridgeIn": { "tx": "4b3760d1f31b50da6a54bec54fe5f5645fe1719429f5acc05544c3a431289ffc", "status": "SUCCESS", "provenAtBlock": 11173818, "accountNodes": 9, "storageNodes": 1 },
+      "l1Lock": {
+        "tx": "0xcf24c4d7a905ee39d2f1cbf907b3c179da8e3b11e6b329e455a65ea48f6ce802",
+        "block": 11173795
+      },
+      "headAdvance": {
+        "tx": "df258a684a4ce4c205954b342d509f46a6f6acc37b8922135d4251c571d26d9d",
+        "finalizedBlock": 11173818,
+        "stateRoot": "be389ba008f23d51e83c16161fd570ff9d775b63e6e8b3aa12d9202e9d78a4cc"
+      },
+      "bridgeIn": {
+        "tx": "4b3760d1f31b50da6a54bec54fe5f5645fe1719429f5acc05544c3a431289ffc",
+        "status": "SUCCESS",
+        "provenAtBlock": 11173818,
+        "accountNodes": 9,
+        "storageNodes": 1
+      },
       "poolRootAfterMint": "2acd0da63ec50c4a016218905599891ec228aeaa68981fa815e1f536fa4b3eb8",
       "verifiedLive": true
     }

@@ -32,6 +32,8 @@ export * from "./types.js";
 export * from "./merkle.js";
 export * from "./note.js";
 export * from "./order.js";
+export * from "./match.js";
+export * from "./note-crypto.js";
 export * from "./wallet.js";
 export * from "./prover.js";
 export * from "./stellar.js";
@@ -319,6 +321,7 @@ export class Wraith implements WraithSdk {
       amount: order.amount,
       assetBase: order.assetBase,
       assetQuote: order.assetQuote,
+      nonce: order.nonce,
       spendingKey: params.spendingKey,
       refundBlinding: refundNote.blinding,
     });

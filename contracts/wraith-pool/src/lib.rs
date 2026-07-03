@@ -286,7 +286,18 @@ impl WraithPool {
     ///   [2] fill_note_buyer [3] fill_note_seller
     ///   [4] residual_order_a [5] residual_order_b
     ///   [6] refund_note_a [7] refund_note_b
-    pub fn match_orders(env: Env, proof: Bytes, public_inputs: Bytes) -> Result<(), WraithError> {
+    /// `leaf_memos` are sealed note payloads for the inserted leaves (fills, then any non-zero
+    /// refunds, in that order); `residual_memos` deliver each non-zero residual order's secret
+    /// to its owner. Both are untrusted transport, bound by count to the actual outputs and
+    /// re-emitted in `OrderMatchedEvent` — a memo can never mint balance (its commitment must
+    /// be a real emitted output), it only lets the owner discover what it already received.
+    pub fn match_orders(
+        env: Env,
+        proof: Bytes,
+        public_inputs: Bytes,
+        leaf_memos: Vec<Bytes>,
+        residual_memos: Vec<Bytes>,
+    ) -> Result<(), WraithError> {
         let f = parse_fields(&env, &public_inputs, 8)?;
         let order_a = f.get(0).unwrap();
         let order_b = f.get(1).unwrap();
@@ -303,29 +314,51 @@ impl WraithPool {
         if !order_active(&env, &order_a) || !order_active(&env, &order_b) {
             return Err(WraithError::OrderNotActive);
         }
+
+        // Bind the memo lists to the actual outputs (2 fills + non-zero refunds; non-zero
+        // residuals) so the matcher can't misalign or omit a delivery.
+        let expected_leaves =
+            2 + (!is_zero(&refund_a)) as u32 + (!is_zero(&refund_b)) as u32;
+        let expected_residuals = (!is_zero(&residual_a)) as u32 + (!is_zero(&residual_b)) as u32;
+        if leaf_memos.len() != expected_leaves || residual_memos.len() != expected_residuals {
+            return Err(WraithError::InvalidPublicInputs);
+        }
+
         verify(&env, DataKey::MatchVf, &public_inputs, &proof)?;
 
         remove_order(&env, &order_a);
         remove_order(&env, &order_b);
-        merkle::insert(&env, &fill_buyer);
-        merkle::insert(&env, &fill_seller);
+
+        // Tree leaves: the two fills, then any non-zero refunds — in this exact order.
+        let mut leaf_commitments: Vec<BytesN<32>> = Vec::new(&env);
+        let mut leaf_indices: Vec<u32> = Vec::new(&env);
+        for c in [Some(fill_buyer), Some(fill_seller), opt_nonzero(refund_a), opt_nonzero(refund_b)] {
+            if let Some(c) = c {
+                let idx = merkle::insert(&env, &c);
+                leaf_commitments.push_back(c);
+                leaf_indices.push_back(idx);
+            }
+        }
+
+        // Residual orders re-enter the active set (their funds stay locked in them).
+        let mut residual_commitments = Vec::new(&env);
         if !is_zero(&residual_a) {
             add_order(&env, &residual_a);
+            residual_commitments.push_back(residual_a);
         }
         if !is_zero(&residual_b) {
             add_order(&env, &residual_b);
+            residual_commitments.push_back(residual_b);
         }
-        if !is_zero(&refund_a) {
-            merkle::insert(&env, &refund_a);
-        }
-        if !is_zero(&refund_b) {
-            merkle::insert(&env, &refund_b);
-        }
+
         OrderMatchedEvent {
             order_a,
             order_b,
-            fill_buyer,
-            fill_seller,
+            leaf_commitments,
+            leaf_indices,
+            leaf_memos,
+            residual_commitments,
+            residual_memos,
         }
         .publish(&env);
         Ok(())
@@ -492,6 +525,15 @@ fn asset_id_of(env: &Env, asset: &Address) -> BytesN<32> {
 
 fn is_zero(b: &BytesN<32>) -> bool {
     b.to_array() == [0u8; 32]
+}
+
+/// `Some(c)` unless `c` is the zero field (a zero commitment means the output is absent).
+fn opt_nonzero(c: BytesN<32>) -> Option<BytesN<32>> {
+    if is_zero(&c) {
+        None
+    } else {
+        Some(c)
+    }
 }
 
 fn is_spent(env: &Env, nullifier: &BytesN<32>) -> bool {

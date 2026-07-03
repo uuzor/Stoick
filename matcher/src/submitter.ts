@@ -12,12 +12,17 @@
  */
 import { WraithContract, encodePublicInputs, isValidProofLength, type ProofData } from "@wraith/sdk";
 import type { xdr } from "@stellar/stellar-sdk";
+import type { MatchMemos } from "./memo.js";
 
-/** Shape of the parts of `deployments.json` we read. */
+/** Shape of the parts of `deployments.json` we read. Newer match-memo pool wins. */
 export interface DeploymentsLike {
   network?: string;
   networkPassphrase?: string;
-  contracts?: { wraithPool?: string };
+  contracts?: {
+    wraithPool?: string;
+    wraithPoolMemo?: { contract?: string };
+    wraithPoolMatchMemo?: { contract?: string };
+  };
 }
 
 /** Sources for the pool contract id, in priority order. */
@@ -36,7 +41,13 @@ export interface ContractIdSources {
  */
 export function resolveContractId(sources: ContractIdSources = {}): string {
   const env = sources.env ?? process.env;
-  const id = sources.contractId ?? env.WRAITH_POOL_CONTRACT ?? sources.deployments?.contracts?.wraithPool;
+  const c = sources.deployments?.contracts;
+  const id =
+    sources.contractId ??
+    env.WRAITH_POOL_CONTRACT ??
+    c?.wraithPoolMatchMemo?.contract ?? // the pool the frontend targets (match memos)
+    c?.wraithPoolMemo?.contract ??
+    c?.wraithPool;
   if (!id) {
     throw new Error(
       "no WraithPool contract id; set it explicitly, via WRAITH_POOL_CONTRACT, or in deployments.json (contracts.wraithPool)",
@@ -99,12 +110,18 @@ export class MatchSubmitter {
   }
 
   /**
-   * Build the unsigned `match_orders(proof, public_inputs)` invoke operation. Does not
-   * touch the network. The proof length is validated by the SDK (0 or PROOF_BYTES).
+   * Build the unsigned `match_orders(proof, public_inputs, leaf_memos, residual_memos)` invoke
+   * operation. Does not touch the network. The proof length is validated by the SDK (0 or
+   * PROOF_BYTES); the memo counts are bound to the outputs on-chain.
    */
-  buildOperation(proof: ProofData): xdr.Operation {
+  buildOperation(proof: ProofData, memos?: MatchMemos): xdr.Operation {
     const { proof: proofBytes, publicInputs } = this.encode(proof);
-    return this.contract.matchOrdersOp({ proof: proofBytes, publicInputs });
+    return this.contract.matchOrdersOp({
+      proof: proofBytes,
+      publicInputs,
+      leafMemos: memos?.leafMemos ?? [],
+      residualMemos: memos?.residualMemos ?? [],
+    });
   }
 
   /**
@@ -113,7 +130,7 @@ export class MatchSubmitter {
    * transaction, and returns the transaction hash. Requires a funded source account and a
    * real, verifier-accepted proof.
    */
-  async submit(proof: ProofData, opts: LiveSubmitOptions): Promise<string> {
+  async submit(proof: ProofData, opts: LiveSubmitOptions, memos?: MatchMemos): Promise<string> {
     if (!isValidProofLength(proof.proof)) {
       throw new Error(`refusing to submit a non-on-chain-length proof (${proof.proof.length} bytes)`);
     }
@@ -124,7 +141,7 @@ export class MatchSubmitter {
     const source = await server.getAccount(keypair.publicKey());
 
     const tx = new TransactionBuilder(source, { fee: BASE_FEE, networkPassphrase })
-      .addOperation(this.buildOperation(proof))
+      .addOperation(this.buildOperation(proof, memos))
       .setTimeout(opts.timeoutSeconds ?? 30)
       .build();
 

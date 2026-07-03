@@ -118,6 +118,7 @@ export function WraithProvider({ children }: { children: ReactNode }) {
         const stats = await syncIndexer().catch(() => null)
         if (cancelled) return
         await refreshBalances()
+        await refreshOrders()
         void stats
       } catch (err) {
         if (!cancelled) {
@@ -139,12 +140,17 @@ export function WraithProvider({ children }: { children: ReactNode }) {
     const id = setInterval(() => {
       void syncIndexer()
         .then((stats) => {
-          if (stats && stats.deposits + stats.received + stats.spent > 0) void refreshBalances()
+          // A fill/deposit/spend can change both the balance and open orders (matched → filled,
+          // partial → residual), so refresh both when the indexer reports any change.
+          if (stats && stats.deposits + stats.received + stats.spent > 0) {
+            void refreshBalances()
+            void refreshOrders()
+          }
         })
         .catch(() => undefined)
     }, 15_000)
     return () => clearInterval(id)
-  }, [identityReady, address, refreshBalances])
+  }, [identityReady, address, refreshBalances, refreshOrders])
 
   const value = useMemo<WraithContextValue>(
     () => ({

@@ -102,8 +102,20 @@ pub struct OrderMatchedEvent {
     pub order_a: BytesN<32>,
     #[topic]
     pub order_b: BytesN<32>,
-    pub fill_buyer: BytesN<32>,
-    pub fill_seller: BytesN<32>,
+    /// Settlement notes inserted as Merkle leaves — the two fills, then any non-zero refunds,
+    /// in insertion order. Aligned with `leaf_indices` and `leaf_memos`. Lets a recipient's
+    /// indexer rebuild the tree and discover its fill/refund notes (same model as `transfer`).
+    pub leaf_commitments: Vec<BytesN<32>>,
+    /// Leaf indices of `leaf_commitments`, in order.
+    pub leaf_indices: Vec<u32>,
+    /// Opaque per-leaf encrypted note payloads sealed to each note's owner (untrusted
+    /// transport; a memo is only accepted for a commitment actually emitted here).
+    pub leaf_memos: Vec<Bytes>,
+    /// Residual orders re-registered in the active set (non-zero only) — NOT tree leaves.
+    /// Aligned with `residual_memos`, which deliver each residual order's secret to its owner
+    /// so it stays cancellable/manageable.
+    pub residual_commitments: Vec<BytesN<32>>,
+    pub residual_memos: Vec<Bytes>,
 }
 
 #[contractevent(topics = ["order_cancelled"], data_format = "map")]

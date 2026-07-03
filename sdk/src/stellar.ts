@@ -194,10 +194,20 @@ export class WraithContract {
     return this.contract.call("place_order", scvBytes(args.proof), scvBytes(args.publicInputs));
   }
 
-  /** match_orders(proof, public_inputs). SPEC sec 9.1. */
-  matchOrdersOp(args: { proof: Uint8Array; publicInputs: Uint8Array }): xdr.Operation {
+  /** match_orders(proof, public_inputs, leaf_memos, residual_memos). SPEC sec 9.1.
+   *  `leafMemos` deliver the inserted fill/refund notes' secrets (aligned with the emitted
+   *  leaf commitments); `residualMemos` deliver the residual orders' secrets. Both are
+   *  untrusted transport re-emitted in `OrderMatchedEvent`. */
+  matchOrdersOp(args: {
+    proof: Uint8Array;
+    publicInputs: Uint8Array;
+    leafMemos?: Uint8Array[];
+    residualMemos?: Uint8Array[];
+  }): xdr.Operation {
     this.assertProofLen(args.proof);
-    return this.contract.call("match_orders", scvBytes(args.proof), scvBytes(args.publicInputs));
+    const leaf = xdr.ScVal.scvVec((args.leafMemos ?? []).map(scvBytes));
+    const residual = xdr.ScVal.scvVec((args.residualMemos ?? []).map(scvBytes));
+    return this.contract.call("match_orders", scvBytes(args.proof), scvBytes(args.publicInputs), leaf, residual);
   }
 
   /** cancel_order(proof, public_inputs). SPEC sec 9.1. */
@@ -208,12 +218,10 @@ export class WraithContract {
 
   /**
    * Convenience: build an op directly from a {@link ProofData} for a two-arg
-   * (proof, public_inputs) method. Use {@link withdrawOp} for withdraw (extra args).
+   * (proof, public_inputs) method. Use {@link withdrawOp} for withdraw and
+   * {@link matchOrdersOp} for match_orders (both take extra args).
    */
-  proofOp(
-    method: "transfer" | "place_order" | "match_orders" | "cancel_order",
-    proofData: ProofData,
-  ): xdr.Operation {
+  proofOp(method: "transfer" | "place_order" | "cancel_order", proofData: ProofData): xdr.Operation {
     const proof = proofData.proof;
     const publicInputs = encodePublicInputs(proofData.publicInputs);
     switch (method) {
@@ -221,12 +229,10 @@ export class WraithContract {
         return this.transferOp({ proof, publicInputs });
       case "place_order":
         return this.placeOrderOp({ proof, publicInputs });
-      case "match_orders":
-        return this.matchOrdersOp({ proof, publicInputs });
       case "cancel_order":
         return this.cancelOrderOp({ proof, publicInputs });
       default:
-        throw new Error(`use withdrawOp directly for method ${method}`);
+        throw new Error(`use withdrawOp / matchOrdersOp directly for method ${method}`);
     }
   }
 

@@ -62,14 +62,19 @@ describe("MatchSubmitter.buildOperation", () => {
     const args = invoke.hostFunction().invokeContract();
     expect(args.functionName().toString()).toBe("match_orders");
 
-    // Two scval args: proof bytes, then public_inputs bytes (256).
+    // Four scval args: proof, public_inputs (256), leaf_memos vec, residual_memos vec.
     const params = args.args();
-    expect(params).toHaveLength(2);
+    expect(params).toHaveLength(4);
     expect(params[0]!.switch()).toBe(xdr.ScValType.scvBytes());
     expect(params[1]!.switch()).toBe(xdr.ScValType.scvBytes());
+    expect(params[2]!.switch()).toBe(xdr.ScValType.scvVec());
+    expect(params[3]!.switch()).toBe(xdr.ScValType.scvVec());
     expect(params[0]!.bytes()).toHaveLength(PROOF_BYTES);
     expect(params[1]!.bytes()).toHaveLength(8 * 32);
     expect(decodePublicInputs(new Uint8Array(params[1]!.bytes()))).toEqual(EIGHT);
+    // No memos passed → empty vecs.
+    expect(params[2]!.vec()).toHaveLength(0);
+    expect(params[3]!.vec()).toHaveLength(0);
   });
 
   it("rejects a proof whose length is neither 0 nor PROOF_BYTES", () => {

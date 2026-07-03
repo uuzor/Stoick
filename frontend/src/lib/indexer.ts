@@ -30,20 +30,25 @@ import {
   fieldToHex,
   hexToField,
   MerkleTree,
+  PRICE_SCALE,
   TREE_DEPTH,
   type Field,
 } from '@wraith/sdk'
 import { NATIVE_SAC, POOL_CONTRACT_ID } from './config'
-import { decryptNote, deriveEncKeypair, type EncKeypair } from './note-crypto'
+import { decryptNote, decryptOrder, deriveEncKeypair, type EncKeypair } from './note-crypto'
 import { depositBlinding, noteSecret } from './note-secrets'
 import {
   addNote,
+  addOrder,
   loadNotes,
+  loadOrders,
   markSpent,
+  setLeafIndexForCommitment,
+  setOrderStatus,
   upsertReceivedNote,
   type StoredNote,
 } from './note-store'
-import { assetIdFor, tokenBySac } from './tokens'
+import { assetIdFor, assetMeta, tokenBySac } from './tokens'
 import type { MerkleWitness } from './merkle-witness'
 import type { AssetCode } from './wraith-sdk'
 
@@ -100,6 +105,11 @@ function fieldHex(bytes: Uint8Array): string {
   return fieldToHex(bytesToField(bytes))
 }
 
+/** True if `bytes` is a present, non-zero field (a zero commitment means "not inserted"). */
+function nonZeroBytes(bytes: Uint8Array | undefined): boolean {
+  return bytes instanceof Uint8Array && bytes.some((b) => b !== 0)
+}
+
 function topicSymbol(ev: rpc.Api.EventResponse): string {
   try {
     return String(scValToNative(ev.topic[0]!))
@@ -111,6 +121,7 @@ function topicSymbol(ev: rpc.Api.EventResponse): string {
 export class WraithIndexer {
   readonly tree = new MerkleTree(TREE_DEPTH)
   private leaves: string[] = [] // hex commitments (canonical), insertion order
+  private leafSet = new Set<string>() // lowercased leaf hexes, for O(1) idempotent appends
   private cursor = 0 // next start ledger (last fully-indexed + 1); 0 = never indexed
   private depositCount = new Map<string, number>() // `${assetIdHex}:${amount}` -> our count
   private nullifiers = new Map<string, string>() // our unspent nullifier hex -> commitment hex
@@ -149,6 +160,7 @@ export class WraithIndexer {
     for (const c of leaves) {
       this.tree.insert(hexToField(c))
       this.leaves.push(c)
+      this.leafSet.add(c.toLowerCase())
     }
     this.cursor = cursor
     for (const n of ownedNotes) {
@@ -184,6 +196,23 @@ export class WraithIndexer {
     }
     this.tree.insert(hexToField(hex))
     this.leaves.push(hex)
+    this.leafSet.add(hex.toLowerCase())
+    return true
+  }
+
+  /**
+   * Append a leaf that carries no emitted index (the order events insert a change/refund/fill
+   * leaf but don't publish its index). Idempotent by commitment, so an overlapping re-scan
+   * can't double-insert. Back-fills the `leafIndex` of a matching local note (a place/cancel
+   * change/refund note we created), making it spendable.
+   */
+  private appendLeaf(hex: string): boolean {
+    if (this.leafSet.has(hex.toLowerCase())) return false
+    const index = this.tree.size
+    this.tree.insert(hexToField(hex))
+    this.leaves.push(hex)
+    this.leafSet.add(hex.toLowerCase())
+    setLeafIndexForCommitment(hex, index)
     return true
   }
 
@@ -247,6 +276,47 @@ export class WraithIndexer {
     return note
   }
 
+  /** If `commitmentHex` is one of our open orders, mark it filled (it was matched + removed
+   *  from the active set on-chain; a partial fill's remainder arrives as a residual order). */
+  private markMatchedOrder(commitmentHex: string): void {
+    if (loadOrders().some((o) => o.commitment.toLowerCase() === commitmentHex.toLowerCase() && o.status === 'open')) {
+      setOrderStatus(commitmentHex, 'filled')
+    }
+  }
+
+  /** Recover a residual order from a match's `residual_memos` into our order store, so a
+   *  partial-fill continuation shows up (and stays cancellable). No-op if not ours/known. */
+  private recoverResidualOrder(memo: Uint8Array): void {
+    if (!(memo instanceof Uint8Array) || memo.length === 0) return
+    const p = decryptOrder(this.id.enc, memo)
+    if (!p || p.ownerKey.toLowerCase() !== this.id.ownerKeyHex.toLowerCase()) return
+    if (loadOrders().some((o) => o.commitment.toLowerCase() === p.commitment.toLowerCase())) return
+    const price = BigInt(p.price)
+    const amount = BigInt(p.amount)
+    const lockedIsBase = p.side === 1 // sell locks base; buy locks quote
+    const lockedAssetId = lockedIsBase ? p.assetBase : p.assetQuote
+    const lockedAmount = lockedIsBase ? amount : (amount * price) / PRICE_SCALE
+    const lockedAssetCode = (lockedIsBase ? p.baseCode : p.quoteCode) ?? ''
+    addOrder({
+      commitment: p.commitment,
+      side: p.side,
+      price: p.price,
+      amount: p.amount,
+      assetBase: p.assetBase,
+      assetQuote: p.assetQuote,
+      baseCode: p.baseCode ?? '',
+      quoteCode: p.quoteCode ?? '',
+      ownerKey: p.ownerKey,
+      nonce: p.nonce,
+      lockedAssetId,
+      lockedAmount: lockedAmount.toString(),
+      lockedAssetCode,
+      lockedDecimals: assetMeta(lockedAssetCode).decimals,
+      status: 'open',
+      createdAt: Date.now(),
+    })
+  }
+
   /** Mark an owned note spent if `nullifierHex` is one of ours. Returns true if it was. */
   private spendByNullifier(nullifierHex: string, out: string[]): boolean {
     const commitment = this.nullifiers.get(nullifierHex)
@@ -290,9 +360,37 @@ export class WraithIndexer {
       for (const n of data.nullifiers ?? []) this.spendByNullifier(fieldHex(n), spent)
     } else if (topic === 'withdraw') {
       this.spendByNullifier(fieldHex(scValToNative(ev.topic[1]!) as Uint8Array), spent)
+    } else if (topic === 'order_placed') {
+      // place_order spends the input note (nullifier in `order_commitment`? no — the order
+      // hides it) and inserts the change note leaf. Append it (if non-zero) for tree
+      // correctness + to back-fill our local change note's index.
+      const data = scValToNative(ev.value) as { change_commitment: Uint8Array }
+      if (nonZeroBytes(data?.change_commitment) && this.appendLeaf(fieldHex(data.change_commitment))) leaves += 1
+    } else if (topic === 'order_cancelled') {
+      const data = scValToNative(ev.value) as { refund: Uint8Array }
+      if (nonZeroBytes(data?.refund) && this.appendLeaf(fieldHex(data.refund))) leaves += 1
+    } else if (topic === 'order_matched') {
+      // Fills + non-zero refunds are tree leaves with sealed memos — same discovery as
+      // `transfer`. `order_a`/`order_b` (topics) are the matched orders; residual orders are
+      // delivered via `residual_memos` (they're active orders, not tree leaves).
+      const data = scValToNative(ev.value) as {
+        leaf_commitments: Uint8Array[]
+        leaf_indices: Array<number | bigint>
+        leaf_memos: Uint8Array[]
+        residual_memos?: Uint8Array[]
+      }
+      const commits = data?.leaf_commitments ?? []
+      for (let i = 0; i < commits.length; i += 1) {
+        const index = Number(data.leaf_indices[i])
+        const hex = fieldHex(commits[i]!)
+        if (this.insertLeaf(index, hex)) leaves += 1
+        const mine = this.ownTransferOutput(hex, index, data.leaf_memos[i]!)
+        if (mine) found.push(mine)
+      }
+      this.markMatchedOrder(fieldHex(scValToNative(ev.topic[1]!) as Uint8Array))
+      this.markMatchedOrder(fieldHex(scValToNative(ev.topic[2]!) as Uint8Array))
+      for (const m of data?.residual_memos ?? []) this.recoverResidualOrder(m)
     }
-    // order_placed / order_matched / order_cancelled: the DEX is not yet wired to the live
-    // pool (no such events exist). When it ships, add their leaf inserts here.
     return leaves
   }
 

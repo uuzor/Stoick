@@ -18,8 +18,6 @@ import {
 } from './ui'
 import { ProofProgress } from './ProofProgress'
 
-const MID_PRICE = 0.3965
-
 function timeAgo(timestamp: number): string {
   const mins = Math.max(0, Math.round((Date.now() - timestamp) / 60000))
   if (mins < 1) return 'just now'
@@ -131,7 +129,7 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
 
       <div className={embedded ? 'space-y-5' : 'grid gap-5 lg:grid-cols-5'}>
         <Card className="p-6 lg:col-span-2">
-          <SectionHeading icon={<ChartIcon className="h-4 w-4" />} title="Place order" hint={`${base}/${quote}`} />
+          <SectionHeading icon={<ChartIcon className="h-4 w-4" />} title="Place order" />
 
           <div className="mb-4 mt-3 grid grid-cols-2 gap-3">
             <Field label="Base">
@@ -144,13 +142,6 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
           {base === quote && (
             <p className="mb-3 text-xs text-amber-400">Pick two different tokens.</p>
           )}
-
-          <div className="mb-4 flex items-center justify-between rounded-xl border border-ink-700 bg-ink-900/60 px-3.5 py-2.5">
-            <span className="text-xs font-medium text-zinc-400">Mid price</span>
-            <span className="font-mono text-sm text-zinc-200">
-              {MID_PRICE.toFixed(4)} {quote}
-            </span>
-          </div>
 
           <div className="space-y-4">
             <ToggleGroup

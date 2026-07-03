@@ -25,12 +25,14 @@ import { createServer as createHttpServer, type IncomingMessage, type Server, ty
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { MatchingEngine, OrderValidationError } from "./engine.js";
+import { buildMatchMemos } from "./memo.js";
 import { MockMatchProver, proveMatch, type MatchBlindings, type MatchProver } from "./prover.js";
 import { MatchSubmitter, resolveContractId, type DeploymentsLike, type LiveSubmitOptions } from "./submitter.js";
 import type { Match, SubmittedOrder } from "./types.js";
 
 export * from "./types.js";
 export * from "./engine.js";
+export * from "./memo.js";
 export * from "./prover.js";
 export * from "./submitter.js";
 
@@ -54,6 +56,12 @@ export function parseOrder(body: Record<string, unknown>): SubmittedOrder {
   if (side !== "buy" && side !== "sell") {
     throw new OrderValidationError(`side must be "buy" or "sell": got ${String(side)}`);
   }
+  // Delivery: the live intake requires a receive code so the matcher can seal settlement
+  // memos to the owner (on-chain, self-custodial). Reject orders that can't be settled to.
+  const receiveCode = String(body.receiveCode ?? "");
+  if (receiveCode === "") {
+    throw new OrderValidationError("receiveCode is required so the matcher can deliver your settlement notes");
+  }
   return {
     commitment: String(body.commitment ?? ""),
     side,
@@ -63,6 +71,9 @@ export function parseOrder(body: Record<string, unknown>): SubmittedOrder {
     assetQuote: String(body.assetQuote ?? ""),
     ownerKey: String(body.ownerKey ?? ""),
     nonce: String(body.nonce ?? ""),
+    receiveCode,
+    ...(body.baseCode ? { baseCode: String(body.baseCode) } : {}),
+    ...(body.quoteCode ? { quoteCode: String(body.quoteCode) } : {}),
   };
 }
 
@@ -134,14 +145,16 @@ export class MatcherService {
     let processed = 0;
     for (const match of matches) {
       try {
-        const { proof } = await proveMatch(match, this.prover, this.blindings);
+        const { proof, assembled } = await proveMatch(match, this.prover, this.blindings);
+        // Seal the settlement notes + residual orders to their owners for on-chain delivery.
+        const memos = buildMatchMemos(match, assembled);
         if (this.submitter) {
           if (this.mode === "live") {
             if (!this.live) throw new Error("mode 'live' requires `live` submit options");
-            const hash = await this.submitter.submit(proof, this.live);
+            const hash = await this.submitter.submit(proof, this.live, memos);
             this.log.info(`[match] submitted ${match.a.commitment} x ${match.b.commitment} -> ${hash}`);
           } else {
-            this.submitter.buildOperation(proof); // validate encoding without sending
+            this.submitter.buildOperation(proof, memos); // validate encoding without sending
             this.log.info(
               `[match] dry-run ${match.a.commitment} x ${match.b.commitment} ` +
                 `(fill=${match.fill}, exec=${match.execPrice}, quote=${match.quoteFilled})`,
@@ -191,6 +204,16 @@ export class MatcherService {
   readonly handler = (req: IncomingMessage, res: ServerResponse): void => {
     const url = req.url ?? "/";
     const method = req.method ?? "GET";
+
+    // CORS: the browser wallet submits orders cross-origin (localhost:5173 → :8787).
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "content-type");
+    if (method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
 
     if (method === "GET" && (url === "/health" || url === "/")) {
       return sendJson(res, 200, { ok: true, orders: this.engine.size, mode: this.mode });
@@ -262,9 +285,29 @@ export async function main(): Promise<void> {
   }
 
   const mode = process.env.WRAITH_SUBMIT === "live" ? "live" : "dry-run";
+
+  // Real proving: point MATCH_CIRCUIT at the compiled match_orders.json (needs the bb.js CRS
+  // at runtime). Without it, proving is mocked and submission is a dry-run (safe offline).
+  let prover: MatchProver | undefined;
+  const circuitPath = process.env.MATCH_CIRCUIT;
+  if (circuitPath) {
+    const { NoirProver } = await import("@wraith/sdk");
+    prover = new NoirProver(JSON.parse(readFileSync(circuitPath, "utf8")));
+  }
+
+  // Live submission: needs the funded matcher key (server secret) + an RPC endpoint.
+  let live: LiveSubmitOptions | undefined;
+  if (mode === "live") {
+    const sourceSecret = process.env.WRAITH_MATCHER_SECRET;
+    if (!sourceSecret) throw new Error("WRAITH_SUBMIT=live requires WRAITH_MATCHER_SECRET (a funded S… key)");
+    live = { rpcUrl: process.env.WRAITH_RPC_URL ?? "https://soroban-testnet.stellar.org", sourceSecret };
+  }
+
   const service = new MatcherService({
     submitter,
     mode,
+    ...(prover ? { prover } : {}),
+    ...(live ? { live } : {}),
     intervalMs: Number(process.env.MATCH_INTERVAL_MS ?? 2000),
   });
 
@@ -274,7 +317,7 @@ export async function main(): Promise<void> {
     // eslint-disable-next-line no-console
     console.log(
       `[matcher] listening on :${port} (mode=${mode}, contract=${submitter?.contractId ?? "none"}, ` +
-        `prover=mock unless wired)`,
+        `prover=${prover ? "NoirProver" : "mock"})`,
     );
   });
 }

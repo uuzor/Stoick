@@ -270,6 +270,8 @@ export function buildCancelOrderInputs(p: {
   amount: bigint;
   assetBase: Field;
   assetQuote: Field;
+  /** Order nonce — required to reopen the order commitment in-circuit. */
+  nonce: Field;
   spendingKey: Field;
   refundBlinding: Field;
 }): CircuitInputMap {
@@ -282,7 +284,72 @@ export function buildCancelOrderInputs(p: {
     amount: iv(p.amount),
     asset_base: fv(p.assetBase),
     asset_quote: fv(p.assetQuote),
+    nonce: fv(p.nonce),
     spending_key: fv(p.spendingKey),
     refund_blinding: fv(p.refundBlinding),
+  };
+}
+
+/** Build inputs for the `match_orders` circuit (SPEC sec 8.4). Public inputs first, in the
+ *  load-bearing order; then both orders' plaintext + the new-note blindings/nonces. */
+export function buildMatchOrdersInputs(p: {
+  orderCommitmentA: Field;
+  orderCommitmentB: Field;
+  fillNoteBuyer: Field;
+  fillNoteSeller: Field;
+  residualOrderA: Field;
+  residualOrderB: Field;
+  refundNoteA: Field;
+  refundNoteB: Field;
+  aSide: number;
+  aPrice: bigint;
+  aAmount: bigint;
+  aAssetBase: Field;
+  aAssetQuote: Field;
+  aOwnerKey: Field;
+  aNonce: Field;
+  bSide: number;
+  bPrice: bigint;
+  bAmount: bigint;
+  bAssetBase: Field;
+  bAssetQuote: Field;
+  bOwnerKey: Field;
+  bNonce: Field;
+  buyerFillBlinding: Field;
+  sellerFillBlinding: Field;
+  residualANonce: Field;
+  residualBNonce: Field;
+  refundABlinding: Field;
+  refundBBlinding: Field;
+}): CircuitInputMap {
+  return {
+    order_commitment_a: fv(p.orderCommitmentA),
+    order_commitment_b: fv(p.orderCommitmentB),
+    fill_note_buyer: fv(p.fillNoteBuyer),
+    fill_note_seller: fv(p.fillNoteSeller),
+    residual_order_a: fv(p.residualOrderA),
+    residual_order_b: fv(p.residualOrderB),
+    refund_note_a: fv(p.refundNoteA),
+    refund_note_b: fv(p.refundNoteB),
+    a_side: iv(p.aSide),
+    a_price: iv(p.aPrice),
+    a_amount: iv(p.aAmount),
+    a_asset_base: fv(p.aAssetBase),
+    a_asset_quote: fv(p.aAssetQuote),
+    a_owner_key: fv(p.aOwnerKey),
+    a_nonce: fv(p.aNonce),
+    b_side: iv(p.bSide),
+    b_price: iv(p.bPrice),
+    b_amount: iv(p.bAmount),
+    b_asset_base: fv(p.bAssetBase),
+    b_asset_quote: fv(p.bAssetQuote),
+    b_owner_key: fv(p.bOwnerKey),
+    b_nonce: fv(p.bNonce),
+    buyer_fill_blinding: fv(p.buyerFillBlinding),
+    seller_fill_blinding: fv(p.sellerFillBlinding),
+    residual_a_nonce: fv(p.residualANonce),
+    residual_b_nonce: fv(p.residualBNonce),
+    refund_a_blinding: fv(p.refundABlinding),
+    refund_b_blinding: fv(p.refundBBlinding),
   };
 }

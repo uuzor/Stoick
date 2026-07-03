@@ -15,19 +15,26 @@
  *   transfer/placeOrder/cancelOrder  — not yet wired (clear "coming soon" errors).
  */
 import {
+  buildCancelOrderInputs,
+  buildPlaceOrderInputs,
   buildTransaction,
   buildTransferInputs,
   buildWithdrawInputs,
   createNote,
+  createOrder,
   createOutputNote,
   deriveViewingKey,
   encodePublicInputs,
   fieldToHex,
+  hexToField,
   NoirProver,
   noteNullifier,
+  orderLockedAmount,
+  OrderSide,
   recipientHash,
   toField,
   WraithContract,
+  type CircuitInputMap,
   type Field,
 } from '@wraith/sdk'
 import { rpc, scValToNative, TransactionBuilder, xdr } from '@stellar/stellar-sdk'
@@ -38,15 +45,19 @@ import { getKitAddress, signWithKit } from './wallet-kit'
 import { formatAmount } from './format'
 import {
   addNote,
+  addOrder,
   getSpendingKey,
   loadNotes,
+  loadOrders,
   markSpent,
+  setOrderStatus,
   toBalanceNote,
   type StoredNote,
 } from './note-store'
 import { dummyPath, readPoolTreeState, witnessesAfterInserts, type MerkleWitness } from './merkle-witness'
 import { getIndexer, syncIndexer } from './indexer-service'
-import { decodeReceiveCode, deriveEncKeypair, encryptNote, type NotePayload } from './note-crypto'
+import { decodeReceiveCode, deriveEncKeypair, encodeReceiveCode, encryptNote, type NotePayload } from './note-crypto'
+import { submitOrderToMatcher } from './matcher-client'
 import type {
   AssetCode,
   DepositParams,
@@ -251,6 +262,25 @@ export class RealWraithSdk implements WraithSdk {
     return indexer.witnessFor(stored.leafIndex)
   }
 
+  /** Fetch a compiled circuit, generate the UltraHonk proof, and verify it locally (against
+   *  the same transcript) before it ever costs gas — a bad witness fails here, not on-chain. */
+  private async proveAndVerify(circuitName: string, inputs: CircuitInputMap) {
+    const circuit = await fetch(`${import.meta.env.BASE_URL}circuits/${circuitName}.json`).then((r) => {
+      if (!r.ok) throw new Error(`Compiled ${circuitName} circuit missing at /circuits/${circuitName}.json.`)
+      return r.json()
+    })
+    const prover = new NoirProver(circuit)
+    try {
+      const proof = await prover.prove(inputs)
+      if (!(await prover.verify(proof))) {
+        throw new Error('Local proof verification failed — aborting before submit.')
+      }
+      return proof
+    } finally {
+      await prover.destroy().catch(() => undefined)
+    }
+  }
+
   // --- Views (LIVE, from local notes) ---
 
   async getShieldedBalances(): Promise<ShieldedBalance[]> {
@@ -276,8 +306,21 @@ export class RealWraithSdk implements WraithSdk {
   }
 
   async getOpenOrders(): Promise<OpenOrder[]> {
-    // Orders ship with placeOrder; none are persisted yet.
-    return []
+    // Orders are sealed on-chain (only their commitment is public), so the wallet tracks its
+    // own open orders locally — the secrets it needs to display + cancel them.
+    return loadOrders()
+      .filter((o) => o.status === 'open')
+      .map((o) => ({
+        id: o.commitment,
+        pair: `${o.baseCode}/${o.quoteCode}`,
+        base: o.baseCode,
+        quote: o.quoteCode,
+        side: o.side === OrderSide.Buy ? 'buy' : 'sell',
+        price: formatAmount(baseUnitsToNumber(BigInt(o.price), 7)),
+        amount: formatAmount(baseUnitsToNumber(BigInt(o.amount), assetMeta(o.baseCode).decimals)),
+        filled: '0',
+        createdAt: o.createdAt,
+      }))
   }
 
   // --- Withdraw to a classic Stellar account (LIVE, in-browser ZK proof) ---
@@ -309,20 +352,7 @@ export class RealWraithSdk implements WraithSdk {
       merkleIndices: witness.pathIndices,
     })
 
-    const circuit = await fetch(`${import.meta.env.BASE_URL}circuits/withdraw.json`).then((r) => {
-      if (!r.ok) throw new Error('Compiled withdraw circuit missing at /circuits/withdraw.json.')
-      return r.json()
-    })
-    const prover = new NoirProver(circuit)
-    let proof
-    try {
-      proof = await prover.prove(inputs)
-      if (!(await prover.verify(proof))) {
-        throw new Error('Local proof verification failed — aborting before submit.')
-      }
-    } finally {
-      await prover.destroy().catch(() => undefined)
-    }
+    const proof = await this.proveAndVerify('withdraw', inputs)
 
     const from = await this.requireAddress()
     const op = this.contract.withdrawOp({
@@ -399,22 +429,7 @@ export class RealWraithSdk implements WraithSdk {
       ],
     })
 
-    const circuit = await fetch(`${import.meta.env.BASE_URL}circuits/transfer.json`).then((r) => {
-      if (!r.ok) throw new Error('Compiled transfer circuit missing at /circuits/transfer.json.')
-      return r.json()
-    })
-    const prover = new NoirProver(circuit)
-    let proof
-    try {
-      proof = await prover.prove(inputs)
-      // Verify locally against the same transcript before paying gas — a wrong witness
-      // (e.g. the note's root aged out) fails here instead of on-chain.
-      if (!(await prover.verify(proof))) {
-        throw new Error('Local proof verification failed — aborting before submit.')
-      }
-    } finally {
-      await prover.destroy().catch(() => undefined)
-    }
+    const proof = await this.proveAndVerify('transfer', inputs)
 
     // Note delivery: compute the two output notes' witnesses, seal the recipient note to
     // THEIR viewing key, and self-seal the change note to OUR viewing key — so both are
@@ -472,13 +487,168 @@ export class RealWraithSdk implements WraithSdk {
     return { hash }
   }
 
-  async placeOrder(_params: PlaceOrderParams): Promise<PlaceOrderResult> {
-    void _params
-    throw new Error('The dark-pool DEX is coming soon — order placement is not yet wired to the live pool.')
+  // --- Swap: sealed dark-pool order (LIVE, in-browser UltraHonk proof) ---
+
+  /**
+   * Place a hidden limit order. Spends a shielded note of the *locked* asset (buy locks
+   * quote = amount·price, sell locks base = amount), registers the opaque `order_commitment`
+   * on-chain, and keeps the remainder as a change note. Price/amount/side live only inside the
+   * commitment — the chain never sees them. Matching (fills) is a separate service; this is
+   * the single-party half and needs no matcher.
+   *
+   * Units: all curated assets are 7-decimals and the circuit's price is scaled by
+   * `PRICE_SCALE = 1e7`, so `priceScaled = price × 1e7` and locked-quote = amount·price is
+   * decimal-consistent. (Revisit if a non-7-decimal asset is ever listed.)
+   */
+  async placeOrder({ base, quote, side, price, amount }: PlaceOrderParams): Promise<PlaceOrderResult> {
+    const sideNum = side === 'buy' ? OrderSide.Buy : OrderSide.Sell
+    const baseMeta = assetMeta(base)
+    const quoteMeta = assetMeta(quote)
+    const baseSac = base === 'XLM' ? NATIVE_SAC : baseMeta.sac
+    const quoteSac = quote === 'XLM' ? NATIVE_SAC : quoteMeta.sac
+    if (!baseSac || !quoteSac) {
+      throw new Error('Both order assets need a Stellar Asset Contract on this network.')
+    }
+    const assetBase = assetIdFor({ native: base === 'XLM', sac: baseSac })
+    const assetQuote = assetIdFor({ native: quote === 'XLM', sac: quoteSac })
+
+    const amountBase = toBaseUnits(amount, baseMeta.decimals)
+    const priceScaled = toBaseUnits(price, 7) // human price × PRICE_SCALE
+    if (amountBase <= 0n || priceScaled <= 0n) throw new Error('Price and amount must be greater than zero.')
+
+    const spendingKey = getSpendingKey()
+    const order = createOrder({ side: sideNum, price: priceScaled, amount: amountBase, assetBase, assetQuote, spendingKey })
+    const locked = orderLockedAmount(order)
+    const lockedHex = fieldToHex(locked.assetId)
+    const lockedIsBase = lockedHex === fieldToHex(assetBase)
+    const lockedCode = lockedIsBase ? base : quote
+    const lockedDecimals = lockedIsBase ? baseMeta.decimals : quoteMeta.decimals
+
+    // Fund the lock from a single shielded note of the locked asset.
+    const chosen = loadNotes()
+      .filter((n) => !n.spent && n.leafIndex !== undefined && n.assetId === lockedHex && BigInt(n.amount) >= locked.amount)
+      .sort((a, b) => (BigInt(a.amount) < BigInt(b.amount) ? -1 : BigInt(a.amount) > BigInt(b.amount) ? 1 : 0))[0]
+    if (!chosen) {
+      throw new Error(
+        `No single shielded ${lockedCode} note covers the ${baseUnitsToNumber(locked.amount, lockedDecimals)} ${lockedCode} this order locks. Deposit into one note first.`,
+      )
+    }
+    const input = toBalanceNote(chosen)
+    const witness = await this.spendWitness(chosen)
+    const changeAmount = input.amount - locked.amount
+    // When the note exactly covers the lock (no remainder) the circuit requires
+    // change_commitment == 0; only create/store a change note when there's actual change.
+    const changeNote = changeAmount > 0n ? createNote({ assetId: locked.assetId, amount: changeAmount, spendingKey }) : null
+
+    const inputs = buildPlaceOrderInputs({
+      merkleRoot: witness.root,
+      nullifier: noteNullifier(input),
+      orderCommitment: order.commitment,
+      changeCommitment: changeNote ? changeNote.commitment : toField(0n),
+      lockedAssetId: locked.assetId,
+      noteAmount: input.amount,
+      noteAssetId: input.assetId,
+      noteBlinding: input.blinding,
+      spendingKey,
+      merklePath: witness.pathElements,
+      merkleIndices: witness.pathIndices,
+      orderSide: sideNum,
+      orderPrice: priceScaled,
+      orderAmount: amountBase,
+      orderAssetBase: assetBase,
+      orderAssetQuote: assetQuote,
+      orderNonce: order.nonce,
+      changeAmount,
+      changeBlinding: changeNote ? changeNote.blinding : toField(0n),
+    })
+
+    const proof = await this.proveAndVerify('place_order', inputs)
+    const from = await this.requireAddress()
+    const op = this.contract.placeOrderOp({
+      proof: proof.proof,
+      publicInputs: encodePublicInputs(proof.publicInputs),
+    })
+    const { hash } = await this.submitOp(op, from)
+
+    markSpent(chosen.commitment)
+    if (changeNote) {
+      addNote(changeNote, { assetCode: lockedCode, txHash: hash, decimals: lockedDecimals, source: 'change' })
+    }
+    addOrder({
+      commitment: fieldToHex(order.commitment),
+      side: sideNum,
+      price: priceScaled.toString(),
+      amount: amountBase.toString(),
+      assetBase: fieldToHex(assetBase),
+      assetQuote: fieldToHex(assetQuote),
+      baseCode: base,
+      quoteCode: quote,
+      ownerKey: fieldToHex(order.ownerKey),
+      nonce: fieldToHex(order.nonce),
+      lockedAssetId: lockedHex,
+      lockedAmount: locked.amount.toString(),
+      lockedAssetCode: lockedCode,
+      lockedDecimals,
+      status: 'open',
+      createdAt: Date.now(),
+      txHash: hash,
+    })
+    // Fold the change-note leaf into the indexer so it becomes spendable + the balance updates.
+    void syncIndexer()
+
+    // Opt into matching: hand the matcher the order preimage + our receive code so it can find
+    // a cross and seal the fill back to us. Best-effort — the order is already on-chain.
+    const ownEnc = deriveEncKeypair(deriveViewingKey(spendingKey))
+    void submitOrderToMatcher({
+      commitment: fieldToHex(order.commitment),
+      side,
+      price: priceScaled.toString(),
+      amount: amountBase.toString(),
+      assetBase: fieldToHex(assetBase),
+      assetQuote: fieldToHex(assetQuote),
+      ownerKey: fieldToHex(order.ownerKey),
+      nonce: fieldToHex(order.nonce),
+      receiveCode: encodeReceiveCode(order.ownerKey, ownEnc.pub),
+      baseCode: base,
+      quoteCode: quote,
+    })
+    return { hash, orderId: fieldToHex(order.commitment) }
   }
 
-  async cancelOrder(_orderId: string): Promise<TxResult> {
-    void _orderId
-    throw new Error('Order cancellation is coming soon — not yet wired to the live pool.')
+  /** Cancel an open order, releasing the locked funds back into a fresh shielded note. */
+  async cancelOrder(orderId: string): Promise<TxResult> {
+    const order = loadOrders().find((o) => o.commitment === orderId && o.status === 'open')
+    if (!order) throw new Error('That order is not open (already cancelled or filled).')
+
+    const spendingKey = getSpendingKey()
+    const lockedAssetId = hexToField(order.lockedAssetId)
+    const refundNote = createNote({ assetId: lockedAssetId, amount: BigInt(order.lockedAmount), spendingKey })
+
+    const inputs = buildCancelOrderInputs({
+      orderCommitment: hexToField(order.commitment),
+      refundCommitment: refundNote.commitment,
+      refundAssetId: lockedAssetId,
+      side: order.side,
+      price: BigInt(order.price),
+      amount: BigInt(order.amount),
+      assetBase: hexToField(order.assetBase),
+      assetQuote: hexToField(order.assetQuote),
+      nonce: hexToField(order.nonce),
+      spendingKey,
+      refundBlinding: refundNote.blinding,
+    })
+
+    const proof = await this.proveAndVerify('cancel_order', inputs)
+    const from = await this.requireAddress()
+    const op = this.contract.cancelOrderOp({
+      proof: proof.proof,
+      publicInputs: encodePublicInputs(proof.publicInputs),
+    })
+    const { hash } = await this.submitOp(op, from)
+
+    setOrderStatus(order.commitment, 'cancelled')
+    addNote(refundNote, { assetCode: order.lockedAssetCode, txHash: hash, decimals: order.lockedDecimals, source: 'change' })
+    void syncIndexer()
+    return { hash }
   }
 }

@@ -10,6 +10,7 @@
  * BN254 field elements (bigint) are serialized as 0x-hex; amounts as decimal strings.
  */
 import { fieldToHex, hexToField, type BalanceNote, type Field } from '@wraith/sdk'
+import { POOL_CONTRACT_ID } from './config'
 import type { AssetCode } from './wraith-sdk'
 
 const NOTES_PREFIX = 'wraith.notes.v1'
@@ -18,6 +19,8 @@ const SPENDING_PREFIX = 'wraith.spendingKey.v1'
 // Merkle tree) and the last fully-indexed ledger (cold-start resumes from here).
 const LEAVES_PREFIX = 'wraith.leaves.v1'
 const CURSOR_PREFIX = 'wraith.indexcursor.v1'
+// Placed dark-pool orders (per identity).
+const ORDERS_PREFIX = 'wraith.orders.v1'
 
 // The shielded identity is derived per Stellar address (see lib/shielded-identity).
 // `activeAddress` namespaces both the notes list and the cached spending key, so
@@ -25,17 +28,22 @@ const CURSOR_PREFIX = 'wraith.indexcursor.v1'
 let activeAddress: string | null = null
 let activeKey: Field | null = null
 
+// Per-pool tag: notes/leaves/cursor/orders belong to a specific pool's Merkle tree, so a pool
+// redeploy (fresh tree) must not reuse the old pool's cached state. The spending key is
+// pool-independent (same wallet → same identity), so it is NOT tagged.
+const POOL_TAG = POOL_CONTRACT_ID.slice(-8)
+
 function notesStorageKey(): string {
-  return `${NOTES_PREFIX}:${activeAddress ?? 'anon'}`
+  return `${NOTES_PREFIX}:${POOL_TAG}:${activeAddress ?? 'anon'}`
 }
 function spendingStorageKey(address: string): string {
   return `${SPENDING_PREFIX}:${address}`
 }
 function leavesStorageKey(): string {
-  return `${LEAVES_PREFIX}:${activeAddress ?? 'anon'}`
+  return `${LEAVES_PREFIX}:${POOL_TAG}:${activeAddress ?? 'anon'}`
 }
 function cursorStorageKey(): string {
-  return `${CURSOR_PREFIX}:${activeAddress ?? 'anon'}`
+  return `${CURSOR_PREFIX}:${POOL_TAG}:${activeAddress ?? 'anon'}`
 }
 
 /** A persisted note: a {@link BalanceNote} plus app bookkeeping. */
@@ -187,6 +195,7 @@ export function clearAllNotes(): void {
         k.startsWith(`${NOTES_PREFIX}:`) ||
         k.startsWith(`${LEAVES_PREFIX}:`) ||
         k.startsWith(`${CURSOR_PREFIX}:`) ||
+        k.startsWith(`${ORDERS_PREFIX}:`) ||
         k.startsWith('wraith.scan.'))
     ) {
       doomed.push(k)
@@ -275,6 +284,75 @@ export function upsertReceivedNote(fields: {
 export function markSpent(commitmentHex: string): void {
   const notes = loadNotes().map((n) => (n.commitment === commitmentHex ? { ...n, spent: true } : n))
   saveNotes(notes)
+}
+
+/**
+ * Set a note's `leafIndex` once its commitment appears on-chain. Used for notes created
+ * locally without a known index (a place/cancel-order change/refund note): the indexer
+ * matches the emitted leaf to the stored note and back-fills the index so it's spendable.
+ * Returns true if a note was updated. No-op if the note already has an index.
+ */
+export function setLeafIndexForCommitment(commitmentHex: string, leafIndex: number): boolean {
+  let changed = false
+  const notes = loadNotes().map((n) => {
+    if (n.commitment.toLowerCase() === commitmentHex.toLowerCase() && n.leafIndex === undefined) {
+      changed = true
+      return { ...n, leafIndex }
+    }
+    return n
+  })
+  if (changed) saveNotes(notes)
+  return changed
+}
+
+// --- Dark-pool orders (device-local; the order's secrets never leave this browser) --------
+
+/** A placed sealed order the wallet is tracking so it can display + later cancel it. */
+export interface StoredOrder {
+  /** order_commitment hex — the id. */
+  commitment: string
+  side: number // OrderSide: 0 buy / 1 sell
+  price: string // scaled u64 (human price × PRICE_SCALE), decimal string
+  amount: string // base-asset base units (u64), decimal string
+  assetBase: string // asset id hex
+  assetQuote: string // asset id hex
+  baseCode: AssetCode
+  quoteCode: AssetCode
+  ownerKey: string
+  nonce: string
+  /** The asset+amount locked by the order (buy locks quote, sell locks base). */
+  lockedAssetId: string
+  lockedAmount: string // base units
+  lockedAssetCode: AssetCode
+  lockedDecimals: number
+  status: 'open' | 'cancelled' | 'filled'
+  createdAt: number
+  txHash?: string
+}
+
+function ordersStorageKey(): string {
+  return `${ORDERS_PREFIX}:${POOL_TAG}:${activeAddress ?? 'anon'}`
+}
+
+export function loadOrders(): StoredOrder[] {
+  return read<StoredOrder[]>(ordersStorageKey(), [])
+}
+
+function saveOrders(orders: StoredOrder[]): void {
+  write(ordersStorageKey(), orders)
+}
+
+/** Persist a freshly placed order (keyed by commitment; replaces any prior copy). */
+export function addOrder(order: StoredOrder): void {
+  const orders = loadOrders().filter((o) => o.commitment !== order.commitment)
+  orders.push(order)
+  saveOrders(orders)
+}
+
+/** Update a tracked order's lifecycle status (open → cancelled/filled). */
+export function setOrderStatus(commitmentHex: string, status: StoredOrder['status']): void {
+  const orders = loadOrders().map((o) => (o.commitment === commitmentHex ? { ...o, status } : o))
+  saveOrders(orders)
 }
 
 /** Rehydrate a {@link BalanceNote} from a stored record. */

@@ -246,8 +246,10 @@ fn full_flow_deposit_order_match_withdraw() {
     );
     assert!(c.is_active_order(&order1));
 
-    // match O0 x O1
+    // match O0 x O1 — two fills, no refunds/residuals → 2 leaf memos, 0 residual memos.
     let (fill_b, fill_s) = (f(env, 0xF1), f(env, 0xF2));
+    let leaf_memos = SorobanVec::from_array(env, [Bytes::new(env), Bytes::new(env)]);
+    let residual_memos: SorobanVec<Bytes> = SorobanVec::new(env);
     c.match_orders(
         &proof(env),
         &pub_inputs(
@@ -263,9 +265,14 @@ fn full_flow_deposit_order_match_withdraw() {
                 zero(env),
             ],
         ),
+        &leaf_memos,
+        &residual_memos,
     );
     assert!(!c.is_active_order(&order0));
     assert!(!c.is_active_order(&order1));
+    // The match event carries both fill leaves + their indices + aligned memos.
+    let root_after_match = c.get_last_root();
+    assert!(c.is_known_root(&root_after_match));
 
     // withdraw 600 to a fresh recipient
     let recipient = Address::generate(env);
@@ -448,9 +455,52 @@ fn match_rejects_inactive_order() {
             zero(env),
         ],
     );
+    let leaf_memos = SorobanVec::from_array(env, [Bytes::new(env), Bytes::new(env)]);
+    let residual_memos: SorobanVec<Bytes> = SorobanVec::new(env);
     assert_eq!(
-        c.try_match_orders(&proof(env), &pi),
+        c.try_match_orders(&proof(env), &pi, &leaf_memos, &residual_memos),
         Err(Ok(WraithError::OrderNotActive))
+    );
+}
+
+#[test]
+fn match_rejects_memo_count_mismatch() {
+    let ctx = setup(true);
+    let env = &ctx.env;
+    let c = &ctx.client;
+    c.deposit(&ctx.user, &ctx.asset, &1_000i128, &f(env, 0xC0));
+    let locked = f(env, 1);
+
+    let root0 = c.get_last_root();
+    c.place_order(
+        &proof(env),
+        &pub_inputs(env, &[root0, f(env, 0x10), f(env, 0xA0), zero(env), locked.clone()]),
+    );
+    let root1 = c.get_last_root();
+    c.place_order(
+        &proof(env),
+        &pub_inputs(env, &[root1, f(env, 0x11), f(env, 0xB0), zero(env), locked]),
+    );
+
+    // Two fills (no refunds/residuals) expects exactly 2 leaf memos + 0 residual memos.
+    let pi = pub_inputs(
+        env,
+        &[
+            f(env, 0xA0),
+            f(env, 0xB0),
+            f(env, 0xF1),
+            f(env, 0xF2),
+            zero(env),
+            zero(env),
+            zero(env),
+            zero(env),
+        ],
+    );
+    let bad_leaf_memos = SorobanVec::from_array(env, [Bytes::new(env)]); // only 1, expected 2
+    let residual_memos: SorobanVec<Bytes> = SorobanVec::new(env);
+    assert_eq!(
+        c.try_match_orders(&proof(env), &pi, &bad_leaf_memos, &residual_memos),
+        Err(Ok(WraithError::InvalidPublicInputs))
     );
 }
 
