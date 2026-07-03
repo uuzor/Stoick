@@ -1,12 +1,17 @@
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
-import { AppShell, PortfolioView, BridgeView, PayView, SwapView } from './components/Wallet'
-import { Faucet } from './components/Faucet'
 import { Landing } from './components/Landing'
 import { BrandCanvas } from './components/BrandCanvas'
+import { AppLayout } from './components/AppLayout'
+import { Faucet } from './components/Faucet'
+import { Hub } from './pages/Hub'
+import { BridgePage } from './pages/BridgePage'
+import { PayPage } from './pages/PayPage'
+import { SwapPage } from './pages/SwapPage'
+import { ReceivePage } from './pages/ReceivePage'
 
-// Routes: the moody monopo landing at "/", the shielded app under "/app" — each act
-// is now its own route (portfolio / bridge / pay / swap) sharing one AppShell world —
-// and the testnet faucet at "/faucet".
+// Routes: the moody monopo landing at "/", then the shielded app as separate
+// pages under a shared shell — hub at "/app", and Bridge/Pay/Swap/Receive each
+// on their own route. The testnet faucet keeps its own standalone surface.
 
 function LandingRoute() {
   const navigate = useNavigate()
@@ -17,12 +22,12 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<LandingRoute />} />
-      <Route path="/app" element={<AppShell />}>
-        <Route index element={<Navigate to="/app/portfolio" replace />} />
-        <Route path="portfolio" element={<PortfolioView />} />
-        <Route path="bridge" element={<BridgeView />} />
-        <Route path="pay" element={<PayView />} />
-        <Route path="swap" element={<SwapView />} />
+      <Route element={<AppLayout />}>
+        <Route path="/app" element={<Hub />} />
+        <Route path="/bridge" element={<BridgePage />} />
+        <Route path="/pay" element={<PayPage />} />
+        <Route path="/swap" element={<SwapPage />} />
+        <Route path="/receive" element={<ReceivePage />} />
       </Route>
       <Route
         path="/faucet"
