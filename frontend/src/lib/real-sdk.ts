@@ -25,6 +25,7 @@ import {
   createOutputNote,
   deriveViewingKey,
   encodePublicInputs,
+  fieldToBytes,
   fieldToHex,
   hexToField,
   NoirProver,
@@ -37,7 +38,8 @@ import {
   type CircuitInputMap,
   type Field,
 } from '@wraith/sdk'
-import { rpc, scValToNative, TransactionBuilder, xdr } from '@stellar/stellar-sdk'
+import { Account, Contract, rpc, scValToNative, TransactionBuilder, xdr } from '@stellar/stellar-sdk'
+import { Buffer } from 'buffer'
 import { ASSET_CONFIG, NATIVE_SAC, NETWORK_PASSPHRASE, POOL_CONTRACT_ID, SOROBAN_RPC_URL } from './config'
 import { assetIdFor, assetMeta } from './tokens'
 import { depositBlinding, noteSecret } from './note-secrets'
@@ -283,7 +285,44 @@ export class RealWraithSdk implements WraithSdk {
 
   // --- Views (LIVE, from local notes) ---
 
+  /**
+   * Mark locally-known notes spent whose nullifier is already used on-chain. The event
+   * indexer only sees spends whose event carries the nullifier (transfer, withdraw) — a note
+   * consumed by `place_order` is NOT recoverable that way (`OrderPlacedEvent` omits it), so on
+   * a fresh sync it would re-appear as spendable and fail with `NullifierUsed (#5)` on spend.
+   * Querying the pool's authoritative `is_spent` view closes that gap for every spend kind.
+   */
+  private async reconcileSpentNotes(): Promise<void> {
+    const unspent = loadNotes().filter((n) => !n.spent)
+    if (unspent.length === 0) return
+    let from: string
+    try {
+      from = await this.requireAddress()
+    } catch {
+      return // no connected wallet — leave the cache untouched
+    }
+    const server = this.server()
+    const source = new Account(from, '0')
+    const pool = new Contract(POOL_CONTRACT_ID)
+    await Promise.all(
+      unspent.map(async (n) => {
+        try {
+          const nullifier = noteNullifier(toBalanceNote(n))
+          const op = pool.call('is_spent', xdr.ScVal.scvBytes(Buffer.from(fieldToBytes(nullifier))))
+          const tx = buildTransaction(source, op, { networkPassphrase: NETWORK_PASSPHRASE })
+          const sim = await server.simulateTransaction(tx)
+          if (!rpc.Api.isSimulationError(sim) && sim.result?.retval && scValToNative(sim.result.retval) === true) {
+            markSpent(n.commitment)
+          }
+        } catch {
+          // Transient RPC/derivation error — keep the note; the next refresh retries.
+        }
+      }),
+    )
+  }
+
   async getShieldedBalances(): Promise<ShieldedBalance[]> {
+    await this.reconcileSpentNotes()
     const totals = new Map<AssetCode, bigint>()
     const decimalsFor = new Map<AssetCode, number>()
     for (const n of loadNotes()) {
