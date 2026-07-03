@@ -36,10 +36,10 @@ const BEATS = [
 ]
 
 const MODULES = [
-  { k: 'BRIDGE', d: 'assets in — or in from Ethereum, BLS-verified on Soroban.' },
-  { k: 'PORTFOLIO', d: 'private multi-asset balances only you can see.' },
-  { k: 'PAY', d: 'confidential payments; amounts and parties hidden.' },
-  { k: 'SWAP', d: 'a zero-knowledge dark pool; orders matched blind.' },
+  { k: 'BRIDGE', d: 'assets in — or in from Ethereum, BLS-verified on Soroban.', to: '/app/bridge' },
+  { k: 'PORTFOLIO', d: 'private multi-asset balances only you can see.', to: '/app/portfolio' },
+  { k: 'PAY', d: 'confidential payments; amounts and parties hidden.', to: '/app/pay' },
+  { k: 'SWAP', d: 'a zero-knowledge dark pool; orders matched blind.', to: '/app/swap' },
 ]
 
 /** Transparent seamless loop as an animated WebP; swaps to a static poster
@@ -169,10 +169,13 @@ export function StoryShielded({ onEnter }: { onEnter: () => void }) {
         <div className={`mt-8 ${CARD}`} style={CARD_BG}>
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[1rem] border border-[#1b1610]/12 bg-[#1b1610]/12 sm:grid-cols-4">
             {MODULES.map((m) => (
-              <div key={m.k} className="bg-[#f4efe4] px-5 py-7">
+              <a key={m.k} href={`#${m.to}`} className="group block bg-[#f4efe4] px-5 py-7 transition hover:bg-[#efe9dc]">
                 <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#3B382D]">{m.k}</div>
                 <p className="mt-3 text-[13px] leading-relaxed text-[#565243]">{m.d}</p>
-              </div>
+                <span className="mt-4 inline-block font-mono text-[10px] uppercase tracking-[0.18em] text-[#78735F] transition-colors group-hover:text-[#4f3e22]">
+                  open →
+                </span>
+              </a>
             ))}
           </div>
           <button

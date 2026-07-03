@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { SVGProps } from 'react'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useWraith } from '../hooks/useWraith'
 import { clearAllNotes } from '../lib/note-store'
 import { formatUsd } from '../lib/format'
@@ -16,6 +17,7 @@ import { Swap } from './Swap'
 import { Act } from './Act'
 import { ScrambleNumber } from './ScrambleNumber'
 import { ProvenLedger } from './ProvenLedger'
+import { BrandCanvas } from './BrandCanvas'
 
 function EyeGlyph({ off, ...props }: SVGProps<SVGSVGElement> & { off?: boolean }) {
   return (
@@ -29,34 +31,34 @@ function EyeGlyph({ off, ...props }: SVGProps<SVGSVGElement> & { off?: boolean }
 
 const MASK = '######'
 
-/** Fragment anchors collide with HashRouter, so the act-nav scrolls by id instead. */
-function scrollToId(id: string) {
-  document.getElementById(id)?.scrollIntoView({ block: 'start' })
-}
-
 // --- top nav ----------------------------------------------------------------
 
+const ACT_LINKS = [
+  ['01 Cross', '/app/bridge'],
+  ['02 Send', '/app/pay'],
+  ['03 Book', '/app/swap'],
+  ['04 Cipher', '/app/portfolio'],
+] as const
+
 function ActNav() {
-  const links = [
-    ['01 Cross', 'act-cross'],
-    ['02 Send', 'act-send'],
-    ['03 Book', 'act-book'],
-    ['04 Cipher', 'act-cipher'],
-  ] as const
   return (
     <header className="relative z-40 border-b border-[#efe9dc]/8 bg-[#1c1710]/40 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-3">
-        <button type="button" onClick={() => window.scrollTo({ top: 0 })} className="flex items-center gap-2">
+        <NavLink to="/app/portfolio" className="flex items-center gap-2">
           <WraithMark className="h-5 w-5 text-spectral" />
           <span className="font-display text-sm font-semibold tracking-tight text-[#f6f1e6]">
             wraith <sup className="align-super font-mono text-[9px] tracking-[0.2em] text-spectral/60">ZK</sup>
           </span>
-        </button>
+        </NavLink>
         <nav className="hidden items-center gap-6 font-mono text-[10px] uppercase tracking-[0.18em] text-spectral/70 sm:flex">
-          {links.map(([label, id]) => (
-            <button key={id} type="button" onClick={() => scrollToId(id)} className="transition hover:text-[#f6f1e6]">
+          {ACT_LINKS.map(([label, to]) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) => cx('transition hover:text-[#f6f1e6]', isActive && 'text-[#f6f1e6]')}
+            >
               {label}
-            </button>
+            </NavLink>
           ))}
         </nav>
         <ConnectWallet />
@@ -79,6 +81,7 @@ function Masthead({
   onToggle: () => void
 }) {
   const total = balances.reduce((sum, b) => sum + b.usdEstimate, 0)
+  const navigate = useNavigate()
   return (
     <section className="relative flex min-h-[88vh] flex-col items-center justify-center px-5 pb-16 pt-12 text-center">
       <div className="flex items-center gap-3">
@@ -124,10 +127,10 @@ function Masthead({
       {!loading && balances.length === 0 && (
         <button
           type="button"
-          onClick={() => scrollToId('act-cross')}
+          onClick={() => navigate('/app/bridge')}
           className="coord-label mt-8 text-spectral/70 transition hover:text-spectral"
         >
-          nothing shielded yet — cross the veil ↓
+          nothing shielded yet — cross the veil →
         </button>
       )}
 
@@ -135,8 +138,8 @@ function Masthead({
         <ProvenLedger />
       </div>
 
-      <button type="button" onClick={() => scrollToId('act-cross')} className="coord-label mt-12 transition hover:text-spectral">
-        scroll ↓
+      <button type="button" onClick={() => navigate('/app/bridge')} className="coord-label mt-12 transition hover:text-spectral">
+        cross the veil →
       </button>
     </section>
   )
@@ -265,12 +268,10 @@ function AppFooter({ onClearLocal }: { onClearLocal: () => void }) {
   )
 }
 
-// --- the shielded film ------------------------------------------------------
+// --- app shell + per-act routes ---------------------------------------------
 
-export function Wallet() {
-  const { balances, loadingBalances, receiveCode, refreshBalances } = useWraith()
-  const [revealed, setRevealed] = useState(false)
-  const [cross, setCross] = useState<BridgeProgress>({ step: 0, total: 2, status: 'idle' })
+export function AppShell() {
+  const { refreshBalances } = useWraith()
 
   async function clearLocalData() {
     const ok = window.confirm(
@@ -283,51 +284,10 @@ export function Wallet() {
 
   return (
     <div className="relative">
+      <BrandCanvas />
       <ActNav />
 
-      <Masthead balances={balances} loading={loadingBalances} revealed={revealed} onToggle={() => setRevealed((v) => !v)} />
-
-      <Act
-        no="Act 01"
-        id="act-cross"
-        title="Cross the veil"
-        standfirst="Move value across the veil between the public chains and the shielded pool. Every crossing is proven, not trusted — a real ZK proof out, or a light-client inclusion proof in."
-        coords={['Stellar · SDF Horizon', 'Ethereum · Sepolia']}
-      >
-        <CrossingRule progress={cross} />
-        <Bridge embedded onProgress={setCross} />
-      </Act>
-
-      <Act
-        no="Act 02"
-        id="act-send"
-        title="Send into the dark"
-        standfirst="A 2-in / 2-out shielded transfer. Amounts and both parties stay hidden; on-chain, observers see only two opaque commitments and a valid proof."
-        coords={['Poseidon · Merkle', '2-in · 2-out']}
-      >
-        <Pay embedded />
-      </Act>
-
-      <Act
-        no="Act 03"
-        id="act-book"
-        title="The sealed book"
-        standfirst="A dark pool where orders stay sealed until they match at the midpoint — so there is nothing to front-run."
-        coords={['Sealed orders', 'Midpoint match']}
-      >
-        {!USE_MOCK && !matchingEnabled() && <MatcherNote />}
-        <Swap embedded />
-      </Act>
-
-      <Act
-        no="Act 04"
-        id="act-cipher"
-        title="Your cipher"
-        standfirst="Your receive code. Share it to be paid privately; the sender encrypts to it, and it reveals nothing about your balance or history."
-        coords={['Owner key', 'Enc pubkey']}
-      >
-        <Receive receiveCode={receiveCode} />
-      </Act>
+      <Outlet />
 
       {/* Seam: the dark shielded film dissolves into the cream footer. Opaque
           ground→cream (a transparent lead-in of the SAME dark seats it on the
@@ -339,5 +299,70 @@ export function Wallet() {
       </div>
       <AppFooter onClearLocal={() => void clearLocalData()} />
     </div>
+  )
+}
+
+export function PortfolioView() {
+  const { balances, loadingBalances, receiveCode } = useWraith()
+  const [revealed, setRevealed] = useState(false)
+  return (
+    <>
+      <Masthead balances={balances} loading={loadingBalances} revealed={revealed} onToggle={() => setRevealed((v) => !v)} />
+
+      <Act
+        no="Act 04"
+        id="act-cipher"
+        title="Your cipher"
+        standfirst="Your receive code. Share it to be paid privately; the sender encrypts to it, and it reveals nothing about your balance or history."
+        coords={['Owner key', 'Enc pubkey']}
+      >
+        <Receive receiveCode={receiveCode} />
+      </Act>
+    </>
+  )
+}
+
+export function BridgeView() {
+  const [cross, setCross] = useState<BridgeProgress>({ step: 0, total: 2, status: 'idle' })
+  return (
+    <Act
+      no="Act 01"
+      id="act-cross"
+      title="Cross the veil"
+      standfirst="Move value across the veil between the public chains and the shielded pool. Every crossing is proven, not trusted — a real ZK proof out, or a light-client inclusion proof in."
+      coords={['Stellar · SDF Horizon', 'Ethereum · Sepolia']}
+    >
+      <CrossingRule progress={cross} />
+      <Bridge embedded onProgress={setCross} />
+    </Act>
+  )
+}
+
+export function PayView() {
+  return (
+    <Act
+      no="Act 02"
+      id="act-send"
+      title="Send into the dark"
+      standfirst="A 2-in / 2-out shielded transfer. Amounts and both parties stay hidden; on-chain, observers see only two opaque commitments and a valid proof."
+      coords={['Poseidon · Merkle', '2-in · 2-out']}
+    >
+      <Pay embedded />
+    </Act>
+  )
+}
+
+export function SwapView() {
+  return (
+    <Act
+      no="Act 03"
+      id="act-book"
+      title="The sealed book"
+      standfirst="A dark pool where orders stay sealed until they match at the midpoint — so there is nothing to front-run."
+      coords={['Sealed orders', 'Midpoint match']}
+    >
+      {!USE_MOCK && !matchingEnabled() && <MatcherNote />}
+      <Swap embedded />
+    </Act>
   )
 }

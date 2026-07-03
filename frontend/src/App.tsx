@@ -1,12 +1,12 @@
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
-import { Wallet } from './components/Wallet'
+import { AppShell, PortfolioView, BridgeView, PayView, SwapView } from './components/Wallet'
 import { Faucet } from './components/Faucet'
 import { Landing } from './components/Landing'
 import { BrandCanvas } from './components/BrandCanvas'
 
-// Routes: the moody monopo landing at "/", the shielded film at "/app" (the masthead
-// IS the app; Cross / Send / Book / Cipher are editorial acts you scroll), and the
-// testnet faucet at "/faucet". Both app surfaces share the one BrandCanvas world.
+// Routes: the moody monopo landing at "/", the shielded app under "/app" — each act
+// is now its own route (portfolio / bridge / pay / swap) sharing one AppShell world —
+// and the testnet faucet at "/faucet".
 
 function LandingRoute() {
   const navigate = useNavigate()
@@ -17,15 +17,13 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<LandingRoute />} />
-      <Route
-        path="/app"
-        element={
-          <>
-            <BrandCanvas />
-            <Wallet />
-          </>
-        }
-      />
+      <Route path="/app" element={<AppShell />}>
+        <Route index element={<Navigate to="/app/portfolio" replace />} />
+        <Route path="portfolio" element={<PortfolioView />} />
+        <Route path="bridge" element={<BridgeView />} />
+        <Route path="pay" element={<PayView />} />
+        <Route path="swap" element={<SwapView />} />
+      </Route>
       <Route
         path="/faucet"
         element={
