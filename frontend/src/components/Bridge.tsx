@@ -149,7 +149,7 @@ function StepRow({ label, state, detail }: { label: string; state: StepState; de
       <span
         className={cx(
           'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border',
-          state === 'done' && 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
+          state === 'done' && 'border-patina-500/40 bg-patina-500/15 text-patina-300',
           state === 'active' && 'border-spectral/50 bg-spectral/15 text-spectral-soft',
           state === 'pending' && 'border-ink-600 bg-ink-800 text-zinc-600',
           state === 'error' && 'border-red-500/50 bg-red-500/15 text-red-300',
@@ -222,7 +222,7 @@ function ProvenanceStrip() {
       <ShieldIcon className="h-3.5 w-3.5 text-spectral-dim" />
       <span>
         Provenance: Ethereum light client{' '}
-        <span className={cx('font-medium', simulated ? 'text-amber-400/80' : 'text-emerald-400/80')}>
+        <span className={cx('font-medium', simulated ? 'text-amber-400/80' : 'text-patina-400/90')}>
           {simulated ? 'simulated' : 'live'}
         </span>
         {head && (
@@ -753,7 +753,7 @@ export function Bridge({ embedded, onProgress }: { embedded?: boolean; onProgres
                   {resolvingCustom && <p className="text-xs text-zinc-500">Resolving token…</p>}
                   {customError && <p className="text-xs text-red-300">{customError}</p>}
                   {!resolvingCustom && !customError && depositToken.sac === customSac.trim() && (
-                    <p className="text-xs text-emerald-400">
+                    <p className="text-xs text-patina-300">
                       Found {depositToken.code} · {depositToken.decimals} decimals
                     </p>
                   )}

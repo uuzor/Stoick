@@ -29,6 +29,15 @@ const halo = {
   deep: '#6E6B64',
 }
 
+// Warm antique-gold accent for positive/confirmed states — the sepia-world
+// stand-in for the old emerald "success" green. Olive-brass so it reads warm
+// and stays clearly apart from the brighter `amber` used for warnings.
+const patina = {
+  300: '#D6C57C',
+  400: '#BFA24C',
+  500: '#9C7F30',
+}
+
 // Warm the default grey text scale so existing `text-zinc-*` reads warm (fog),
 // not cool. Deep-merges with Tailwind's zinc, overriding the shades in use.
 const warmZinc = {
@@ -55,6 +64,7 @@ export default {
         halo,
         ink: mist, // alias — existing bg-ink-*/border-ink-* now read warm.
         spectral: halo, // alias — existing text-spectral/bg-spectral now read gold.
+        patina,
         zinc: warmZinc,
       },
       fontFamily: {

@@ -78,7 +78,7 @@ export function ProofProgress({
                 className={cx(
                   'h-1.5 rounded-full transition-all duration-300',
                   state === 'active' ? 'w-8 bg-spectral' : 'w-4',
-                  state === 'done' && 'bg-emerald-400/70',
+                  state === 'done' && 'bg-patina-400/80',
                   state === 'pending' && 'bg-[#efe9dc]/15',
                   state === 'error' && 'w-8 bg-red-400',
                 )}
