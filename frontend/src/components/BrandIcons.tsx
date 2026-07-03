@@ -7,7 +7,7 @@ import { cx } from '../lib/cx'
  * Rendered as single-color glyphs (they inherit `currentColor`) so they sit cleanly
  * in the black-and-white UI — no external image fetches, so nothing can 404. The
  * Stellar and Ethereum paths are the canonical simple-icons marks; USDC and the
- * Wraith ghost are drawn to match the same weight.
+ * Wraith mark are drawn to match the same weight.
  */
 
 export function StellarGlyph(props: SVGProps<SVGSVGElement>) {
@@ -56,22 +56,14 @@ export function XrpGlyph(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-export function GhostMark(props: SVGProps<SVGSVGElement>) {
+export function WraithMark(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 32 32" fill="none" aria-hidden {...props}>
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
       <path
-        d="M16 4c-5 0-9 4-9 9v13l3-2.2 3 2.2 3-2.2 3 2.2 3-2.2 3 2.2V13c0-5-4-9-9-9z"
-        fill="currentColor"
-        opacity="0.18"
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M1 3.19 1 4.34 1.33 6.2 2.31 8.88 2.99 9.94 4.03 11.01 4.98 11.6 5.89 11.93 4.19 12.73 3.19 13.7 2.44 14.77 1.77 16.21 1.35 17.58 1 19.59 1 20.68 22.89 20.63 22.54 17.58 22 15.85 21.45 14.75 19.95 12.93 19 12.31 18.06 11.95 19.19 11.47 20.06 10.85 21.54 8.95 22.53 6.38 22.87 3.19ZM11.98 4.21 12.49 7.02 13.04 8.46 13.61 9.46 14.37 10.45 15.17 11.16 16.8 11.95 15.87 12.29 14.97 12.86 13.51 14.55 12.49 16.85 12 19.66 11.36 16.72 10.27 14.37 9.01 12.93 7.99 12.27 7.06 11.96 8.86 11.05 9.52 10.47 10.29 9.46 11.36 7.15Z"
       />
-      <path
-        d="M16 4c-5 0-9 4-9 9v13l3-2.2 3 2.2 3-2.2 3 2.2 3-2.2 3 2.2V13c0-5-4-9-9-9z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      <circle cx="12.5" cy="13.5" r="1.4" fill="currentColor" />
-      <circle cx="19.5" cy="13.5" r="1.4" fill="currentColor" />
     </svg>
   )
 }
@@ -84,7 +76,7 @@ type GlyphComponent = FC<SVGProps<SVGSVGElement>>
 const GLYPHS: Record<string, GlyphComponent> = {
   stellar: StellarGlyph,
   ethereum: EthereumGlyph,
-  wraith: GhostMark,
+  wraith: WraithMark,
   XLM: StellarGlyph,
   ETH: EthereumGlyph,
   bETH: EthereumGlyph,

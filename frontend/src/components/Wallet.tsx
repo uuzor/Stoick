@@ -7,7 +7,7 @@ import { USE_MOCK } from '../lib/config'
 import { matchingEnabled } from '../lib/matcher-client'
 import type { ShieldedBalance } from '../lib/wraith-sdk'
 import { cx } from '../lib/cx'
-import { CopyIcon, GhostMark } from './ui'
+import { CopyIcon, WraithMark } from './ui'
 import { CoinBadge } from './BrandIcons'
 import { ConnectWallet } from './ConnectWallet'
 import { Bridge, type BridgeProgress } from './Bridge'
@@ -47,7 +47,7 @@ function ActNav() {
     <header className="fixed inset-x-0 top-0 z-40 border-b border-[#efe9dc]/8 bg-[#1c1710]/55 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-3">
         <button type="button" onClick={() => window.scrollTo({ top: 0 })} className="flex items-center gap-2">
-          <GhostMark className="h-5 w-5 text-spectral" />
+          <WraithMark className="h-5 w-5 text-spectral" />
           <span className="font-display text-sm font-semibold tracking-tight text-[#f6f1e6]">
             wraith <sup className="align-super font-mono text-[9px] tracking-[0.2em] text-spectral/60">ZK</sup>
           </span>
@@ -202,7 +202,7 @@ function Receive({ receiveCode }: { receiveCode: string | null }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-center rounded-2xl border border-ink-700 bg-ink-900/40 p-8">
-        <GhostMark className="h-20 w-20 text-spectral/70" />
+        <WraithMark className="h-20 w-20 text-spectral/70" />
       </div>
       {receiveCode ? (
         <>
@@ -236,7 +236,7 @@ function AppFooter({ onClearLocal }: { onClearLocal: () => void }) {
           <p className="max-w-xs text-[15px] font-medium leading-snug">
             Private money on Stellar. Bridge in, hold, pay and trade — proven on-chain, never revealed.
           </p>
-          <GhostMark className="h-11 w-11" style={{ filter: 'brightness(0)' }} />
+          <WraithMark className="h-11 w-11" style={{ filter: 'brightness(0)' }} />
         </div>
 
         <div>

@@ -10,9 +10,9 @@ import type { AssetCode } from '../lib/wraith-sdk'
 import { truncateKey } from '../lib/format'
 import { CoinBadge } from './BrandIcons'
 
-// The ghost mark now lives with the other brand glyphs; re-exported so existing
-// `import { GhostMark } from './ui'` call sites keep working.
-export { GhostMark } from './BrandIcons'
+// The wraith mark lives with the other brand glyphs; re-exported so `import
+// { WraithMark } from './ui'` call sites resolve here.
+export { WraithMark } from './BrandIcons'
 
 // --- Icons (inherit currentColor) -------------------------------------------
 
