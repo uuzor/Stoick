@@ -4,6 +4,7 @@ import { BrandCanvas } from './components/BrandCanvas'
 import { AppLayout } from './components/AppLayout'
 import { Faucet } from './components/Faucet'
 import { Hub } from './pages/Hub'
+import { PortfolioPage } from './pages/PortfolioPage'
 import { BridgePage } from './pages/BridgePage'
 import { PayPage } from './pages/PayPage'
 import { SwapPage } from './pages/SwapPage'
@@ -24,10 +25,13 @@ export default function App() {
       <Route path="/" element={<LandingRoute />} />
       <Route element={<AppLayout />}>
         <Route path="/app" element={<Hub />} />
-        <Route path="/bridge" element={<BridgePage />} />
+        <Route path="/portfolio" element={<PortfolioPage />} />
+        <Route path="/deposit" element={<BridgePage />} />
         <Route path="/pay" element={<PayPage />} />
         <Route path="/swap" element={<SwapPage />} />
         <Route path="/receive" element={<ReceivePage />} />
+        {/* Deposit/Withdraw was previously "Bridge" — keep old links working. */}
+        <Route path="/bridge" element={<Navigate to="/deposit" replace />} />
       </Route>
       <Route
         path="/faucet"

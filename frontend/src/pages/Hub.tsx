@@ -1,6 +1,6 @@
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useWraith } from '../hooks/useWraith'
+import { useReveal } from '../hooks/useReveal'
 import { formatUsd } from '../lib/format'
 import { cx } from '../lib/cx'
 import { ScrambleNumber } from '../components/ScrambleNumber'
@@ -11,7 +11,7 @@ import { EyeGlyph } from '../components/ui'
 const MASK = '######'
 
 const MODULES = [
-  ['Bridge', '/bridge', 'Cross the veil', 'Move value in and out of the shielded pool — proven, not trusted.'],
+  ['Deposit / Withdraw', '/deposit', 'Cross the veil', 'Move value in and out of the shielded pool — proven, not trusted.'],
   ['Pay', '/pay', 'Send into the dark', 'A 2-in / 2-out shielded transfer. Amounts and parties stay hidden.'],
   ['Swap', '/swap', 'The sealed book', 'A dark pool where orders match at the midpoint — nothing to front-run.'],
   ['Receive', '/receive', 'Your cipher', 'Share your receive code to be paid privately.'],
@@ -19,7 +19,7 @@ const MODULES = [
 
 export function Hub() {
   const { balances, loadingBalances } = useWraith()
-  const [revealed, setRevealed] = useState(false)
+  const { revealed, toggle } = useReveal()
   const total = balances.reduce((sum, b) => sum + b.usdEstimate, 0)
 
   return (
@@ -29,7 +29,7 @@ export function Hub() {
           <span className="coord-label">shielded · [ poseidon · merkle ]</span>
           <button
             type="button"
-            onClick={() => setRevealed((v) => !v)}
+            onClick={toggle}
             aria-label={revealed ? 'Hide balance' : 'Reveal balance'}
             className="text-spectral/50 transition hover:text-spectral"
           >
@@ -66,7 +66,7 @@ export function Hub() {
         )}
 
         {!loadingBalances && balances.length === 0 && (
-          <Link to="/bridge" className="coord-label mt-8 text-spectral/70 transition hover:text-spectral">
+          <Link to="/deposit" className="coord-label mt-8 text-spectral/70 transition hover:text-spectral">
             nothing shielded yet — cross the veil →
           </Link>
         )}

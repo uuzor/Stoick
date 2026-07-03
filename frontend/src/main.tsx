@@ -7,6 +7,7 @@ import { WagmiProvider } from 'wagmi'
 import App from './App'
 import { WalletProvider } from './hooks/useWallet'
 import { WraithProvider } from './hooks/useWraith'
+import { RevealProvider } from './hooks/useReveal'
 import { wagmiConfig } from './lib/wagmi'
 import './index.css'
 
@@ -26,7 +27,9 @@ createRoot(rootElement).render(
         <HashRouter>
           <WalletProvider>
             <WraithProvider>
-              <App />
+              <RevealProvider>
+                <App />
+              </RevealProvider>
             </WraithProvider>
           </WalletProvider>
         </HashRouter>

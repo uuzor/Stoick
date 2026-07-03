@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { useWraith } from '../hooks/useWraith'
 import { useEvmWallet } from '../hooks/useEvmWallet'
 import { useWallet } from '../hooks/useWallet'
@@ -888,7 +889,13 @@ export function Bridge({ embedded, onProgress }: { embedded?: boolean; onProgres
             <p className="mt-4 flex items-center gap-2 text-sm text-emerald-300">
               <CheckIcon className="h-4 w-4" />
               {direction === 'deposit' ? (
-                <>Shielded {String(toCode)} now visible in Portfolio.</>
+                <>
+                  Shielded {String(toCode)} now visible in{' '}
+                  <Link to="/portfolio" className="underline underline-offset-2 transition hover:text-emerald-200">
+                    Portfolio
+                  </Link>
+                  .
+                </>
               ) : l1 === 'stellar' ? (
                 <>Released to {truncateKey(recipient, 6, 6)} on Stellar.</>
               ) : (

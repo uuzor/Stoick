@@ -1,6 +1,6 @@
-import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useWraith } from '../hooks/useWraith'
+import { useReveal } from '../hooks/useReveal'
 import { clearAllNotes } from '../lib/note-store'
 import { formatUsd } from '../lib/format'
 import { cx } from '../lib/cx'
@@ -10,7 +10,8 @@ import { EyeGlyph, WraithMark } from './ui'
 import { ScrambleNumber } from './ScrambleNumber'
 
 const NAV = [
-  ['Bridge', '/bridge'],
+  ['Portfolio', '/portfolio'],
+  ['Deposit / Withdraw', '/deposit'],
   ['Pay', '/pay'],
   ['Swap', '/swap'],
   ['Receive', '/receive'],
@@ -18,7 +19,7 @@ const NAV = [
 
 function ShieldedChip() {
   const { balances, loadingBalances } = useWraith()
-  const [revealed, setRevealed] = useState(false)
+  const { revealed, toggle } = useReveal()
   if (loadingBalances || balances.length === 0) return null
   const total = balances.reduce((sum, b) => sum + b.usdEstimate, 0)
   return (
@@ -27,7 +28,7 @@ function ShieldedChip() {
       <ScrambleNumber value={formatUsd(total)} revealed={revealed} className="font-mono text-sm text-[#f6f1e6]" />
       <button
         type="button"
-        onClick={() => setRevealed((v) => !v)}
+        onClick={toggle}
         aria-label={revealed ? 'Hide balance' : 'Reveal balance'}
         className="text-spectral/50 transition hover:text-spectral"
       >
@@ -47,7 +48,7 @@ function AppNav() {
             wraith <sup className="align-super font-mono text-[9px] tracking-[0.2em] text-spectral/60">ZK</sup>
           </span>
         </NavLink>
-        <nav className="hidden items-center gap-6 font-mono text-[10px] uppercase tracking-[0.18em] sm:flex">
+        <nav className="hidden items-center gap-5 font-mono text-[10px] uppercase tracking-[0.16em] md:flex">
           {NAV.map(([label, to]) => (
             <NavLink
               key={to}

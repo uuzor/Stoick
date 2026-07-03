@@ -36,10 +36,10 @@ const BEATS = [
 ]
 
 const MODULES = [
-  { k: 'BRIDGE', d: 'assets in — or in from Ethereum, BLS-verified on Soroban.', to: '/app/bridge' },
-  { k: 'PORTFOLIO', d: 'private multi-asset balances only you can see.', to: '/app/portfolio' },
-  { k: 'PAY', d: 'confidential payments; amounts and parties hidden.', to: '/app/pay' },
-  { k: 'SWAP', d: 'a zero-knowledge dark pool; orders matched blind.', to: '/app/swap' },
+  { k: 'DEPOSIT / WITHDRAW', d: 'assets in — or in from Ethereum, BLS-verified on Soroban.', to: '/deposit' },
+  { k: 'PORTFOLIO', d: 'private multi-asset balances only you can see.', to: '/portfolio' },
+  { k: 'PAY', d: 'confidential payments; amounts and parties hidden.', to: '/pay' },
+  { k: 'SWAP', d: 'a zero-knowledge dark pool; orders matched blind.', to: '/swap' },
 ]
 
 /** Transparent seamless loop as an animated WebP; swaps to a static poster
