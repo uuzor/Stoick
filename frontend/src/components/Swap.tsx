@@ -215,7 +215,12 @@ export function Swap({ embedded }: { embedded?: boolean } = {}) {
         </Card>
       </div>
 
-      <ProofProgress flow={proof} title="Placing sealed order" onClose={closeOverlay} />
+      <ProofProgress
+        flow={proof}
+        title="Placing sealed order"
+        subject={parseAmount(amount) > 0 ? `${amount} ${base}` : undefined}
+        onClose={closeOverlay}
+      />
     </div>
   )
 }

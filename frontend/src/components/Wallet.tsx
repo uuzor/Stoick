@@ -1,47 +1,22 @@
 import { useState } from 'react'
-import type { ReactNode, SVGProps } from 'react'
+import type { SVGProps } from 'react'
 import { useWraith } from '../hooks/useWraith'
 import { clearAllNotes } from '../lib/note-store'
-import { assetMeta } from '../lib/tokens'
 import { formatUsd } from '../lib/format'
-import { AssetAvatar, CopyIcon, GhostMark } from './ui'
+import { USE_MOCK } from '../lib/config'
+import { matchingEnabled } from '../lib/matcher-client'
+import type { ShieldedBalance } from '../lib/wraith-sdk'
+import { cx } from '../lib/cx'
+import { CopyIcon, GhostMark } from './ui'
 import { CoinBadge } from './BrandIcons'
 import { ConnectWallet } from './ConnectWallet'
-import { Sheet } from './Sheet'
-import { Bridge } from './Bridge'
+import { Bridge, type BridgeProgress } from './Bridge'
 import { Pay } from './Pay'
 import { Swap } from './Swap'
+import { Act } from './Act'
+import { ScrambleNumber } from './ScrambleNumber'
+import { ProvenLedger } from './ProvenLedger'
 
-// --- action icons -----------------------------------------------------------
-
-function PlusGlyph(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
-      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  )
-}
-function SendGlyph(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
-      <path d="M7 17 17 7m0 0H9m8 0v8" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-function SwapGlyph(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
-      <path d="M7 5v14m0 0 3-3m-3 3-3-3M17 19V5m0 0 3 3m-3-3-3 3" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-function ReceiveGlyph(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
-      <path d="M12 4v11m0 0 4-4m-4 4-4-4M5 20h14" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
 function EyeGlyph({ off, ...props }: SVGProps<SVGSVGElement> & { off?: boolean }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
@@ -52,26 +27,165 @@ function EyeGlyph({ off, ...props }: SVGProps<SVGSVGElement> & { off?: boolean }
   )
 }
 
-// --- pieces -----------------------------------------------------------------
+const MASK = '######'
 
-type SheetId = 'bridge' | 'send' | 'swap' | 'receive'
+/** Fragment anchors collide with HashRouter, so the act-nav scrolls by id instead. */
+function scrollToId(id: string) {
+  document.getElementById(id)?.scrollIntoView({ block: 'start' })
+}
 
-function ActionButton({ label, icon, onClick }: { label: string; icon: ReactNode; onClick: () => void }) {
+// --- top nav ----------------------------------------------------------------
+
+function ActNav() {
+  const links = [
+    ['01 Cross', 'act-cross'],
+    ['02 Send', 'act-send'],
+    ['03 Book', 'act-book'],
+    ['04 Cipher', 'act-cipher'],
+  ] as const
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group flex flex-col items-center gap-2"
-    >
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-ink-700 bg-ink-850 text-zinc-200 transition group-hover:border-spectral/50 group-hover:bg-spectral/10 group-hover:text-spectral-soft">
-        {icon}
-      </span>
-      <span className="text-xs font-medium text-zinc-400 group-hover:text-zinc-200">{label}</span>
-    </button>
+    <header className="fixed inset-x-0 top-0 z-40 border-b border-[#efe9dc]/8 bg-[#1c1710]/55 backdrop-blur-md">
+      <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-3">
+        <button type="button" onClick={() => window.scrollTo({ top: 0 })} className="flex items-center gap-2">
+          <GhostMark className="h-5 w-5 text-spectral" />
+          <span className="font-display text-sm font-semibold tracking-tight text-[#f6f1e6]">
+            wraith <sup className="align-super font-mono text-[9px] tracking-[0.2em] text-spectral/60">ZK</sup>
+          </span>
+        </button>
+        <nav className="hidden items-center gap-6 font-mono text-[10px] uppercase tracking-[0.18em] text-spectral/70 sm:flex">
+          {links.map(([label, id]) => (
+            <button key={id} type="button" onClick={() => scrollToId(id)} className="transition hover:text-[#f6f1e6]">
+              {label}
+            </button>
+          ))}
+        </nav>
+        <ConnectWallet />
+      </div>
+    </header>
   )
 }
 
-const HIDDEN = '••••••'
+// --- masthead ---------------------------------------------------------------
+
+function Masthead({
+  balances,
+  loading,
+  revealed,
+  onToggle,
+}: {
+  balances: ShieldedBalance[]
+  loading: boolean
+  revealed: boolean
+  onToggle: () => void
+}) {
+  const total = balances.reduce((sum, b) => sum + b.usdEstimate, 0)
+  return (
+    <section className="relative flex min-h-[92vh] flex-col items-center justify-center px-5 pb-16 pt-24 text-center">
+      <div className="flex items-center gap-3">
+        <span className="coord-label">shielded · [ poseidon · merkle ]</span>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={revealed ? 'Hide balance' : 'Reveal balance'}
+          className="text-spectral/50 transition hover:text-spectral"
+        >
+          <EyeGlyph off={!revealed} className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mt-6 flex min-h-[4.5rem] items-center" style={{ textShadow: '0 2px 34px rgba(20,16,9,0.55)' }}>
+        {loading ? (
+          <span className="display-hd text-5xl text-spectral/25">••••••</span>
+        ) : (
+          <ScrambleNumber value={formatUsd(total)} revealed={revealed} className="display-hd text-[clamp(2.6rem,9vw,5rem)]" />
+        )}
+      </div>
+      <div className="coord-label mt-3">{revealed ? 'your shielded total · usd' : 'private by default'}</div>
+
+      {!loading && balances.length > 0 && (
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
+          {balances.map((b) => (
+            <span key={b.asset} className="flex items-center gap-2">
+              <CoinBadge name={b.asset} size="sm" />
+              <span className="font-mono text-sm text-zinc-200">{b.asset}</span>
+              <span
+                className={cx(
+                  'font-mono text-sm tabular-nums',
+                  revealed ? 'text-zinc-100' : 'wr-scramble-glyph wr-scramble-char',
+                )}
+              >
+                {revealed ? b.amount : MASK}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {!loading && balances.length === 0 && (
+        <button
+          type="button"
+          onClick={() => scrollToId('act-cross')}
+          className="coord-label mt-8 text-spectral/70 transition hover:text-spectral"
+        >
+          nothing shielded yet — cross the veil ↓
+        </button>
+      )}
+
+      <div className="mt-10 w-full">
+        <ProvenLedger />
+      </div>
+
+      <button type="button" onClick={() => scrollToId('act-cross')} className="coord-label mt-12 transition hover:text-spectral">
+        scroll ↓
+      </button>
+    </section>
+  )
+}
+
+// --- Act 01 crossing droplet ------------------------------------------------
+
+function CrossingRule({ progress }: { progress: BridgeProgress }) {
+  const frac = progress.total > 1 ? progress.step / (progress.total - 1) : 0
+  const pct = progress.status === 'done' ? 100 : Math.round(frac * 100)
+  const lit = progress.status === 'running' || progress.status === 'done'
+  return (
+    <div className="mb-6">
+      <div className="coord-label mb-2 flex justify-between">
+        <span>public world</span>
+        <span>shielded pool</span>
+      </div>
+      <div className="relative h-6">
+        <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-[#efe9dc]/12" />
+        <div
+          className="absolute left-0 top-1/2 h-px -translate-y-1/2 bg-spectral/60 transition-all duration-700"
+          style={{ width: `${pct}%` }}
+        />
+        <div className="absolute top-1/2 -translate-y-1/2 transition-all duration-700" style={{ left: `calc(${pct}% - 5px)` }}>
+          <span
+            className={cx(
+              'block h-2.5 w-2.5 rounded-full transition-colors',
+              lit ? 'bg-spectral shadow-[0_0_10px_2px_rgba(237,235,230,0.45)]' : 'bg-[#efe9dc]/40',
+            )}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// --- Act 03 honesty gate ----------------------------------------------------
+
+function MatcherNote() {
+  return (
+    <div className="mb-5 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-300">
+      <span className="font-mono uppercase tracking-[0.14em]">Operator</span> — orders place and cancel on-chain now; live
+      matching connects when a matcher operator is running. Fills stay ZK-enforced at the midpoint, the operator only
+      settles.
+    </div>
+  )
+}
+
+// --- Act 04 receive cipher --------------------------------------------------
 
 function Receive({ receiveCode }: { receiveCode: string | null }) {
   const [copied, setCopied] = useState(false)
@@ -86,28 +200,24 @@ function Receive({ receiveCode }: { receiveCode: string | null }) {
     }
   }
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-zinc-400">
-        Share your <span className="text-zinc-200">receive code</span> to get paid privately. The sender encrypts
-        the payment to it; it reveals nothing about your balance or history.
-      </p>
-      <div className="flex items-center justify-center rounded-2xl border border-ink-700 bg-ink-950/50 p-6">
-        <GhostMark className="h-16 w-16 text-spectral/70" />
+    <div className="space-y-5">
+      <div className="flex items-center justify-center rounded-2xl border border-ink-700 bg-ink-900/40 p-8">
+        <GhostMark className="h-20 w-20 text-spectral/70" />
       </div>
       {receiveCode ? (
         <>
           <button
             type="button"
             onClick={copy}
-            className="flex w-full items-center gap-2 rounded-xl border border-ink-700 bg-ink-900/70 px-3.5 py-3 text-left transition hover:border-spectral/40"
+            className="flex w-full items-center gap-2 rounded-xl border border-ink-700 bg-ink-900/60 px-4 py-4 text-left transition hover:border-spectral/40"
           >
-            <span className="break-all font-mono text-xs text-zinc-300">{receiveCode}</span>
+            <span className="break-all font-mono text-sm text-zinc-200">{receiveCode}</span>
             <CopyIcon className="ml-auto h-4 w-4 shrink-0 text-zinc-500" />
           </button>
           {copied && <p className="text-center text-xs text-emerald-400">Copied to clipboard</p>}
         </>
       ) : (
-        <p className="rounded-xl border border-ink-700 bg-ink-900/50 px-3.5 py-3 text-center text-sm text-zinc-500">
+        <p className="rounded-xl border border-ink-700 bg-ink-900/50 px-4 py-4 text-center text-sm text-zinc-500">
           Connect your Stellar wallet to reveal your receive code.
         </p>
       )}
@@ -115,14 +225,52 @@ function Receive({ receiveCode }: { receiveCode: string | null }) {
   )
 }
 
-// --- wallet -----------------------------------------------------------------
+// --- footer -----------------------------------------------------------------
+
+function AppFooter({ onClearLocal }: { onClearLocal: () => void }) {
+  return (
+    <footer className="cream-panel border-t border-[#1b1610]/10">
+      <div className="wr-grain absolute inset-0 opacity-40" aria-hidden />
+      <div className="relative mx-auto flex min-h-[68vh] w-full max-w-5xl flex-col justify-between px-8 py-16">
+        <div className="flex items-start justify-between gap-6">
+          <p className="max-w-xs text-[15px] font-medium leading-snug">
+            Private money on Stellar. Bridge in, hold, pay and trade — proven on-chain, never revealed.
+          </p>
+          <GhostMark className="h-11 w-11" style={{ filter: 'brightness(0)' }} />
+        </div>
+
+        <div>
+          <div
+            className="font-display font-light uppercase leading-none tracking-[-0.02em] text-[#b3a081]"
+            style={{ fontSize: 'clamp(2rem, 7vw, 5rem)' }}
+          >
+            enter the dark
+          </div>
+          <div className="mt-6 h-px w-full bg-[#1b1610]/20" />
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-4 font-mono text-[12px] uppercase tracking-[0.14em] text-[#1b1610]/70">
+          <div className="flex flex-wrap gap-6">
+            <a href="#/faucet" className="transition hover:text-[#1b1610]">
+              Test token faucet
+            </a>
+            <button type="button" onClick={onClearLocal} className="uppercase transition hover:text-[#1b1610]">
+              Clear local data
+            </button>
+          </div>
+          <span>© Wraith 2026</span>
+        </div>
+      </div>
+    </footer>
+  )
+}
+
+// --- the shielded film ------------------------------------------------------
 
 export function Wallet() {
   const { balances, loadingBalances, receiveCode, refreshBalances } = useWraith()
   const [revealed, setRevealed] = useState(false)
-  const [sheet, setSheet] = useState<SheetId | null>(null)
-
-  const total = balances.reduce((sum, b) => sum + b.usdEstimate, 0)
+  const [cross, setCross] = useState<BridgeProgress>({ step: 0, total: 2, status: 'idle' })
 
   async function clearLocalData() {
     const ok = window.confirm(
@@ -133,110 +281,55 @@ export function Wallet() {
     await refreshBalances()
   }
 
-  const sheetMeta: Record<SheetId, { title: string; body: ReactNode }> = {
-    bridge: { title: 'Deposit', body: <Bridge embedded /> },
-    send: { title: 'Send', body: <Pay embedded /> },
-    swap: { title: 'Swap', body: <Swap embedded /> },
-    receive: { title: 'Receive', body: <Receive receiveCode={receiveCode} /> },
-  }
-
   return (
-    <div className="mx-auto w-full max-w-[460px] px-4 py-6">
-      {/* Header — shielded identity */}
-      <header className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2 rounded-full border border-ink-700 bg-ink-900/50 py-1 pl-1 pr-3">
-          <CoinBadge name="stellar" size="sm" />
-          <span className="text-xs font-medium text-zinc-300">Stellar Testnet</span>
-        </div>
-        <ConnectWallet />
-      </header>
+    <div className="relative">
+      <ActNav />
 
-      {/* Balance */}
-      <section className="rounded-2xl border border-ink-700 bg-ink-850/70 p-6 text-center shadow-panel">
-        <div className="flex items-center justify-center gap-2">
-          <span className="text-xs font-medium text-zinc-400">Shielded balance</span>
-          <button
-            type="button"
-            onClick={() => setRevealed((v) => !v)}
-            aria-label={revealed ? 'Hide balance' : 'Reveal balance'}
-            className="text-zinc-500 transition hover:text-spectral-soft"
-          >
-            <EyeGlyph off={!revealed} className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="mt-2 font-mono text-4xl font-semibold tracking-tight text-zinc-100 tabular-nums">
-          {loadingBalances ? '—' : revealed ? formatUsd(total) : HIDDEN}
-        </div>
-        <div className="mt-1 text-xs text-zinc-500">{revealed ? 'estimated value' : 'private by default'}</div>
+      <Masthead balances={balances} loading={loadingBalances} revealed={revealed} onToggle={() => setRevealed((v) => !v)} />
 
-        {/* Actions */}
-        <div className="mt-6 flex items-center justify-center gap-5">
-          <ActionButton label="Deposit" icon={<PlusGlyph className="h-5 w-5" />} onClick={() => setSheet('bridge')} />
-          <ActionButton label="Send" icon={<SendGlyph className="h-5 w-5" />} onClick={() => setSheet('send')} />
-          <ActionButton label="Swap" icon={<SwapGlyph className="h-5 w-5" />} onClick={() => setSheet('swap')} />
-          <ActionButton label="Receive" icon={<ReceiveGlyph className="h-5 w-5" />} onClick={() => setSheet('receive')} />
-        </div>
-      </section>
+      <Act
+        no="Act 01"
+        id="act-cross"
+        title="Cross the veil"
+        standfirst="Move value across the veil between the public chains and the shielded pool. Every crossing is proven, not trusted — a real ZK proof out, or a light-client inclusion proof in."
+        coords={['Stellar · SDF Horizon', 'Ethereum · Sepolia']}
+      >
+        <CrossingRule progress={cross} />
+        <Bridge embedded onProgress={setCross} />
+      </Act>
 
-      {/* Assets */}
-      <section className="mt-6">
-        <div className="mb-2 px-1 text-xs font-medium text-zinc-400">Assets</div>
-        {loadingBalances ? (
-          <div className="space-y-2">
-            {[0, 1].map((i) => (
-              <div key={i} className="flex items-center gap-3 rounded-2xl border border-ink-800 bg-ink-900/40 p-3">
-                <div className="h-9 w-9 animate-pulse rounded-xl bg-ink-700" />
-                <div className="h-3 w-16 animate-pulse rounded bg-ink-700" />
-                <div className="ml-auto h-3 w-20 animate-pulse rounded bg-ink-700" />
-              </div>
-            ))}
-          </div>
-        ) : balances.length === 0 ? (
-          <div className="rounded-2xl border border-ink-800 bg-ink-900/40 px-4 py-10 text-center text-sm text-zinc-500">
-            No shielded balances yet.
-            <button className="mt-3 block w-full text-spectral-soft hover:underline" onClick={() => setSheet('bridge')}>
-              Deposit assets →
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {balances.map((b) => (
-              <div
-                key={b.asset}
-                className="flex items-center gap-3 rounded-2xl border border-ink-800 bg-ink-900/40 p-3 transition hover:border-ink-700"
-              >
-                <AssetAvatar code={b.asset} className="h-9 w-9" />
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold tracking-tight text-zinc-100">{b.asset}</div>
-                  <div className="truncate text-xs text-zinc-400">{assetMeta(b.asset).name}</div>
-                </div>
-                <div className="ml-auto text-right">
-                  <div className="font-mono text-sm tabular-nums text-zinc-100">{revealed ? b.amount : HIDDEN}</div>
-                  <div className="text-xs text-zinc-400">{revealed ? `≈ ${formatUsd(b.usdEstimate)}` : ''}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      <Act
+        no="Act 02"
+        id="act-send"
+        title="Send into the dark"
+        standfirst="A 2-in / 2-out shielded transfer. Amounts and both parties stay hidden; on-chain, observers see only two opaque commitments and a valid proof."
+        coords={['Poseidon · Merkle', '2-in · 2-out']}
+      >
+        <Pay embedded />
+      </Act>
 
-      {/* Footer — faucet + local data reset */}
-      <footer className="mt-8 flex items-center justify-center gap-3 text-xs text-zinc-600">
-        <a href="#/faucet" className="transition hover:text-zinc-400">
-          Test token faucet
-        </a>
-        <span className="text-ink-700">·</span>
-        <button type="button" onClick={() => void clearLocalData()} className="transition hover:text-zinc-400">
-          Clear local data
-        </button>
-      </footer>
+      <Act
+        no="Act 03"
+        id="act-book"
+        title="The sealed book"
+        standfirst="A dark pool where orders stay sealed until they match at the midpoint — so there is nothing to front-run."
+        coords={['Sealed orders', 'Midpoint match']}
+      >
+        {!USE_MOCK && !matchingEnabled() && <MatcherNote />}
+        <Swap embedded />
+      </Act>
 
-      {/* Action sheets */}
-      {(['bridge', 'send', 'swap', 'receive'] as SheetId[]).map((id) => (
-        <Sheet key={id} open={sheet === id} title={sheetMeta[id].title} onClose={() => setSheet(null)}>
-          {sheet === id && sheetMeta[id].body}
-        </Sheet>
-      ))}
+      <Act
+        no="Act 04"
+        id="act-cipher"
+        title="Your cipher"
+        standfirst="Your receive code. Share it to be paid privately; the sender encrypts to it, and it reveals nothing about your balance or history."
+        coords={['Owner key', 'Enc pubkey']}
+      >
+        <Receive receiveCode={receiveCode} />
+      </Act>
+
+      <AppFooter onClearLocal={() => void clearLocalData()} />
     </div>
   )
 }

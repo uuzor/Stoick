@@ -2,36 +2,15 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { Wallet } from './components/Wallet'
 import { Faucet } from './components/Faucet'
 import { Landing } from './components/Landing'
-import DitherFluid from './components/DitherFluid'
+import { BrandCanvas } from './components/BrandCanvas'
 
-// Routes: the moody VHS landing at "/", the shielded wallet at "/app" (Portfolio IS the
-// app; Deposit / Send / Swap / Receive open as sheets), and the testnet faucet at "/faucet".
+// Routes: the moody monopo landing at "/", the shielded film at "/app" (the masthead
+// IS the app; Cross / Send / Book / Cipher are editorial acts you scroll), and the
+// testnet faucet at "/faucet". Both app surfaces share the one BrandCanvas world.
 
 function LandingRoute() {
   const navigate = useNavigate()
   return <Landing onEnter={() => navigate('/app')} />
-}
-
-/** Ambient dithered-fluid backdrop — cold monochrome, dense but dimmed behind the app surfaces. */
-function Backdrop() {
-  return (
-    <div className="pointer-events-none fixed inset-0 -z-10 bg-[#060709]">
-      <DitherFluid
-        bgColor="#060709"
-        inkColor="#C7CDD6"
-        scale={5.0}
-        speed={0.32}
-        density={1.0}
-        contrast={1.05}
-        ditherScale={1.5}
-        ribbon={0.82}
-        maxCoverage={0.85}
-        flowAngle={38}
-        quality="medium"
-      />
-      <div className="absolute inset-0 bg-[#060709]/55" />
-    </div>
-  )
 }
 
 export default function App() {
@@ -42,7 +21,7 @@ export default function App() {
         path="/app"
         element={
           <>
-            <Backdrop />
+            <BrandCanvas />
             <Wallet />
           </>
         }
@@ -51,7 +30,7 @@ export default function App() {
         path="/faucet"
         element={
           <>
-            <Backdrop />
+            <BrandCanvas />
             <Faucet />
           </>
         }

@@ -1,96 +1,98 @@
 import type { ProofFlow } from '../hooks/useProofFlow'
 import { cx } from '../lib/cx'
-import { Button, Card, CheckIcon, ShieldIcon, Spinner, XIcon } from './ui'
-
-type StepState = 'done' | 'active' | 'pending' | 'error'
-
-function StepRow({ label, state }: { label: string; state: StepState }) {
-  return (
-    <li className="flex items-center gap-3">
-      <span
-        className={cx(
-          'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border',
-          state === 'done' && 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
-          state === 'active' && 'border-spectral/50 bg-spectral/15 text-spectral-soft',
-          state === 'pending' && 'border-ink-600 bg-ink-800 text-zinc-600',
-          state === 'error' && 'border-red-500/50 bg-red-500/15 text-red-300',
-        )}
-      >
-        {state === 'done' && <CheckIcon className="h-3.5 w-3.5" />}
-        {state === 'active' && <Spinner className="h-3.5 w-3.5" />}
-        {state === 'error' && <XIcon className="h-3.5 w-3.5" />}
-        {state === 'pending' && <span className="h-1.5 w-1.5 rounded-full bg-current" />}
-      </span>
-      <span
-        className={cx(
-          'text-sm transition-colors',
-          state === 'pending' ? 'text-zinc-600' : state === 'error' ? 'text-red-300' : 'text-zinc-200',
-        )}
-      >
-        {label}
-      </span>
-    </li>
-  )
-}
+import { Button, CheckIcon, XIcon } from './ui'
+import { ScrambleNumber } from './ScrambleNumber'
 
 /**
- * Reusable proof-progress overlay. Renders the four-stage proof lifecycle
- * (witness → proof → submit → confirmed) from a `useProofFlow` instance.
- * Wired into the Pay and Swap submit flows.
+ * Proof-as-theatre. The real in-browser UltraHonk proving dominates the wall-clock,
+ * so instead of hiding it in a spinner we take over the whole canvas: the `subject`
+ * (the amount in flight) dissolves through encrypted glyphs for exactly as long as
+ * proving runs, then resolves once the transaction confirms. The step list stays as
+ * the reduced-motion / screen-share fallback. The {flow, onClose} contract is
+ * unchanged, so Pay / Swap callers are untouched; `subject` is optional.
  */
 export function ProofProgress({
   flow,
   title = 'Generating proof',
+  subject,
   onClose,
 }: {
   flow: ProofFlow
   title?: string
+  subject?: string
   onClose: () => void
 }) {
   if (flow.status === 'idle') return null
 
   const done = flow.status === 'done'
   const errored = flow.status === 'error'
-
-  function stepState(index: number): StepState {
-    if (errored && index === flow.step) return 'error'
-    if (done || index < flow.step) return 'done'
-    if (index === flow.step) return 'active'
-    return 'pending'
-  }
+  const running = flow.status === 'running'
+  const current = flow.steps[Math.min(flow.step, flow.steps.length - 1)]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/80 p-4 animate-fade-in">
-      <Card className="w-full max-w-sm p-6">
-        <div className="mb-5 flex items-center gap-3">
-          <span
-            className={cx(
-              'flex h-9 w-9 items-center justify-center rounded-xl',
-              errored ? 'bg-red-500/15 text-red-300' : 'bg-spectral/15 text-spectral-soft',
-            )}
-          >
-            {errored ? <XIcon className="h-4 w-4" /> : <ShieldIcon className="h-5 w-5" />}
-          </span>
-          <div>
-            <div className="panel-title">{done ? 'Confirmed' : errored ? 'Failed' : title}</div>
-            <div className="text-xs text-zinc-500">Zero-knowledge proof · Stellar Testnet</div>
-          </div>
+    <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center overflow-hidden bg-[#1c1710]/88 p-6 backdrop-blur-sm animate-fade-in">
+      {/* the field intensifying — a slow warm pulse while proving */}
+      {running && (
+        <div
+          className="pointer-events-none absolute left-1/2 top-1/2 h-[42rem] w-[42rem] -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(79,62,34,0.55), transparent 62%)' }}
+          aria-hidden
+        />
+      )}
+
+      <div className="relative flex w-full max-w-lg flex-col items-center text-center">
+        <div className="coord-label mb-8">zero-knowledge proof · stellar testnet</div>
+
+        {subject ? (
+          <ScrambleNumber
+            value={subject}
+            revealed={done}
+            className={cx('display-hd text-4xl sm:text-5xl', errored && 'opacity-60')}
+          />
+        ) : (
+          <div className="display-hd text-3xl sm:text-4xl">{done ? 'Confirmed' : errored ? 'Failed' : title}</div>
+        )}
+
+        <div className="mt-8 flex items-center gap-2.5">
+          {done ? (
+            <span className="flex items-center gap-2 text-sm font-medium text-emerald-300">
+              <CheckIcon className="h-4 w-4" /> Confirmed on Stellar
+            </span>
+          ) : errored ? (
+            <span className="flex items-center gap-2 text-sm font-medium text-red-300">
+              <XIcon className="h-4 w-4" /> {flow.error ?? 'Proof failed'}
+            </span>
+          ) : (
+            <span className="text-sm text-zinc-300">{current}</span>
+          )}
         </div>
 
-        <ol className="space-y-3">
-          {flow.steps.map((label, index) => (
-            <StepRow key={label} label={label} state={stepState(index)} />
-          ))}
+        {/* step ticks — the honest fallback */}
+        <ol className="mt-6 flex items-center gap-2" aria-label="proof progress">
+          {flow.steps.map((label, i) => {
+            const state = errored && i === flow.step ? 'error' : done || i < flow.step ? 'done' : i === flow.step ? 'active' : 'pending'
+            return (
+              <li
+                key={label}
+                title={label}
+                className={cx(
+                  'h-1.5 rounded-full transition-all duration-300',
+                  state === 'active' ? 'w-8 bg-spectral' : 'w-4',
+                  state === 'done' && 'bg-emerald-400/70',
+                  state === 'pending' && 'bg-[#efe9dc]/15',
+                  state === 'error' && 'w-8 bg-red-400',
+                )}
+              />
+            )
+          })}
         </ol>
 
-        {errored && flow.error && <p className="mt-4 text-sm text-red-300">{flow.error}</p>}
-
         {(done || errored) && (
-          <Button className="mt-6 w-full" variant={errored ? 'outline' : 'primary'} onClick={onClose}>
+          <Button className="mt-9" variant={errored ? 'outline' : 'primary'} onClick={onClose}>
             {errored ? 'Close' : 'Done'}
           </Button>
         )}
-      </Card>
+      </div>
     </div>
   )
 }

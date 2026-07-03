@@ -80,7 +80,12 @@ export function Pay({ embedded }: { embedded?: boolean } = {}) {
         </div>
       </Card>
 
-      <ProofProgress flow={proof} title="Sending private payment" onClose={closeOverlay} />
+      <ProofProgress
+        flow={proof}
+        title="Sending private payment"
+        subject={isPositiveAmount(amount) ? `${amount} ${asset}` : undefined}
+        onClose={closeOverlay}
+      />
     </div>
   )
 }

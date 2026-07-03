@@ -11,6 +11,13 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* Act-nav jump links glide; honour reduced-motion. */
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+
   body {
     @apply min-h-screen bg-ink-950 font-sans text-zinc-300;
     /* Warm gold haze (the sun through fog) + a fine fractal-noise grain in the
@@ -96,6 +103,31 @@
   .badge {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium;
   }
+
+  /* --- Continuum shell (monopo-continuous /app) ------------------------------ */
+
+  /* The coordinate-label vernacular carried over from the landing hero. */
+  .coord-label {
+    @apply font-mono text-[10px] uppercase tracking-[0.16em] text-spectral/55;
+  }
+
+  /* Uppercase grotesque display type — the masthead + act titles. */
+  .display-hd {
+    @apply font-display font-semibold uppercase tracking-[-0.03em] text-[#f6f1e6];
+    line-height: 0.98;
+  }
+
+  /* The cream spread that closes the film — same world as the landing footer. */
+  .cream-panel {
+    @apply relative overflow-hidden text-[#1b1610];
+    background: #f4efe4;
+  }
+}
+
+/* Film grain, shared by the brand canvas and the cream footer. */
+.wr-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.45 0.45 0.45 0 -0.4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 90px 90px;
 }
 
 /* ScrambleText — encrypted glyphs decoding into letters (monopo-style intro). */

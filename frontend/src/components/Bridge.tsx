@@ -136,6 +136,13 @@ const BRIDGE_CONFIGURED =
 type FlowStatus = 'idle' | 'running' | 'done' | 'error'
 type StepState = 'pending' | 'active' | 'done' | 'error'
 
+/** Progress ping for a host surface to dramatize the crossing (Act 01's droplet). */
+export interface BridgeProgress {
+  step: number
+  total: number
+  status: FlowStatus
+}
+
 function StepRow({ label, state, detail }: { label: string; state: StepState; detail?: ReactNode }) {
   return (
     <li className="flex items-start gap-3">
@@ -342,7 +349,7 @@ function TokenChip({ code }: { code: string }) {
 // Deposit / withdraw widget
 // ---------------------------------------------------------------------------
 
-export function Bridge({ embedded }: { embedded?: boolean } = {}) {
+export function Bridge({ embedded, onProgress }: { embedded?: boolean; onProgress?: (p: BridgeProgress) => void } = {}) {
   const { sdk, refreshBalances, identityReady } = useWraith()
   const evm = useEvmWallet()
   const stellar = useWallet()
@@ -419,6 +426,12 @@ export function Bridge({ embedded }: { embedded?: boolean } = {}) {
       : L1_TOKEN[l1]
 
   const steps = STEP_LABELS[`${direction}:${l1}`]
+
+  // Additive: let a host surface (Act 01) mirror the crossing. Default no-op — the
+  // live Stellar/Ethereum deposit + withdraw paths are byte-for-byte unchanged.
+  useEffect(() => {
+    onProgress?.({ step, total: steps.length, status })
+  }, [step, status, steps.length, onProgress])
 
   function reset() {
     setStatus('idle')
