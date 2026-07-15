@@ -172,7 +172,7 @@ export function computePositionCommitment(
       bigIntToField(tokensOwed0),
       bigIntToField(tokensOwed1),
       ownerKey,
-      bigIntToField(nonce)
+      bigIntToField(BigInt(nonce))
     )
   );
 }

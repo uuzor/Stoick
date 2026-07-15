@@ -88,11 +88,10 @@ export {
 // Contract clients
 export { CLMMClient } from './contracts/clmm';
 
-import { Server } from '@stellar/stellar-sdk';
 import { CLMMClient } from './contracts/clmm';
 import { KeyPair, generateKeyPair, NoteStore, createNote, addMerkleProof } from './crypto/notes';
-import { Note, NetworkConfig, TESTNET_CONFIG, PUBLICNET_CONFIG, DEFAULT_ADDRESSES, ContractAddresses } from './types';
-import { generateMintWitness, ZKProof } from './circuits/inputs';
+import { Note, NetworkConfig, TESTNET_CONFIG, PUBLICNET_CONFIG, DEFAULT_ADDRESSES, ContractAddresses, ZKProof } from './types';
+import { generateMintWitness } from './circuits/inputs';
 import { MerkleProof, Field } from './types';
 
 /**

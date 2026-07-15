@@ -14,7 +14,7 @@ import {
   computeNoteNullifier,
   computePositionCommitment,
   computePositionNullifier
-} from './poseidon';
+} from '../crypto/poseidon';
 
 /**
  * Public inputs for CLMM circuits
@@ -249,7 +249,7 @@ export function generateMintWitness(params: {
  * Export inputs to JSON for Noir circuit
  */
 export function exportToJson(inputs: Record<string, unknown>): string {
-  const formatValue = (value: unknown): string | unknown[] => {
+  const formatValue = (value: unknown): unknown => {
     if (typeof value === 'bigint') {
       return bigIntToField(value);
     }

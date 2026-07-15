@@ -72,7 +72,7 @@ export function generateMerkleProof(
   
   let currentIndex = index;
   
-  for (let level = 0; level < TREE_DEPTH; level++) {
+      for (let level = 0; level < TREE_DEPTH; level++) {
     // Sibling index
     const siblingIndex = currentIndex % 2 === 0 
       ? currentIndex + 1 
@@ -81,7 +81,7 @@ export function generateMerkleProof(
     // Get sibling (or zero hash if doesn't exist)
     const sibling = leaves[siblingIndex] || zeroHashes[level];
     path.push(sibling);
-    indices.push(bigIntToField(currentIndex % 2 === 0 ? 0 : 1));
+    indices.push(bigIntToField(BigInt(currentIndex % 2 === 0 ? 0 : 1)));
     
     // Move to parent
     currentIndex = Math.floor(currentIndex / 2);
@@ -113,23 +113,26 @@ export function buildMerkleTree(leaves: Field[]): {
   let currentLevel = [...leaves];
   const tree: Field[][] = [currentLevel];
   
-  // Pad to power of 2
-  while (currentLevel.length < MAX_LEAVES) {
+  // Pad to power of 2 (minimum 2 for valid tree)
+  while (currentLevel.length < 2) {
     currentLevel.push(zeroHashes[0]);
   }
   
+  let level = 0;
   // Build tree from bottom up
   while (currentLevel.length > 1) {
     const nextLevel: Field[] = [];
     
     for (let i = 0; i < currentLevel.length; i += 2) {
       const left = currentLevel[i];
-      const right = currentLevel[i + 1] || zeroHashes[tree.length - 1];
+      // When padding, use zero hash of the current level
+      const right = currentLevel[i + 1] || zeroHashes[level];
       nextLevel.push(hashPair(left, right));
     }
     
     tree.push(nextLevel);
     currentLevel = nextLevel;
+    level++;
   }
   
   return {

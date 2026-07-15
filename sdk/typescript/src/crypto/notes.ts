@@ -130,7 +130,7 @@ export function verifyNote(note: Note, merkleRoot: MerkleRoot): boolean {
  */
 export class NoteStore {
   private notes: Map<string, Note> = new Map();
-  private nullifiers: Set<string> = new Set();
+  private spentNullifiers: Set<string> = new Set();
   
   /**
    * Add a note to the store
@@ -138,8 +138,7 @@ export class NoteStore {
   addNote(note: Note): void {
     // Store by commitment
     this.notes.set(note.commitment, note);
-    // Track nullifier for double-spend detection
-    this.nullifiers.add(note.nullifier);
+    // DO NOT add nullifier here - it's spent only after a successful burn
   }
   
   /**
@@ -167,14 +166,14 @@ export class NoteStore {
    * Check if a note has been spent
    */
   isSpent(nullifier: string): boolean {
-    return this.nullifiers.has(nullifier);
+    return this.spentNullifiers.has(nullifier);
   }
   
   /**
    * Mark a note as spent (after successful burn)
    */
   markSpent(nullifier: string): void {
-    this.nullifiers.add(nullifier);
+    this.spentNullifiers.add(nullifier);
   }
   
   /**
@@ -193,7 +192,7 @@ export class NoteStore {
    */
   getBalance(assetId: number): bigint {
     return this.getNotesByAsset(assetId)
-      .filter(n => !this.nullifiers.has(n.nullifier))
+      .filter(n => !this.spentNullifiers.has(n.nullifier))
       .reduce((sum, n) => sum + n.amount, 0n);
   }
   
