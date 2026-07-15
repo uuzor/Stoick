@@ -6,59 +6,98 @@ This guide explains how to complete the setup for generating real zero-knowledge
 
 ## Testnet Deployment
 
-| Contract | Testnet Address | WASM Hash |
-|----------|-----------------|-----------|
-| **Verifier** | `CBTDPDHITGHVHPRWVYYCNANUY2WOJT2KCAA4NFDHWWYVHTIJVFPOQAZE` | `98e2f86b20b924` |
-| **CLMM** | `CBT25XQ6QWVCPTXYG2IJL4UEVYSBFH76YTD2EABEMD3RCLFZDJVDNNBQ` | `6c38b44889e8eb` |
-| Admin | `GCRU4LYIMJZHGRNDFGDJWWV626LCHPB2UOMZZZKIZDV5PHJQI6UPZG7Y` | - |
+### Primary Contracts
+
+| Contract | Testnet Address | Purpose |
+|----------|-----------------|---------|
+| **CLMM** | `CD342DPYVBVZH7NZTCRGDJYMFW774YCMEDQGFE4JBGDRZUR5TWLXTMUP` | Main CLMM contract |
+| Admin | `GCRU4LYIMJZHGRNDFGDJWWV626LCHPB2UOMZZZKIZDV5PHJQI6UPZG7Y` | Admin account |
+
+### CLMM Operation Verifiers
+
+Each CLMM operation has its own dedicated verifier contract with operation-specific VK:
+
+| Verifier | Address | Circuit | VK Size |
+|----------|---------|---------|---------|
+| **Mint** | `CDROXB3XDEZZ4D2RYMJABKR2CNBN2OW6K2SRQQUQNN5PCEN4UYJ7U35K` | clmm_mint | 1760 B |
+| **Burn** | `CACGOW4ABQEREUYWRYY4FKAD2VY2H6ZT53ZQJ4JXFGFTH3QGT2ZTWDPJ` | clmm_burn | 1760 B |
+| **Collect** | `CB2GGVSSINHSMQLHGNCVH2CFLLNBHZBDLGMT3PBIM2424CJ4GAUWAT6H` | clmm_collect | 1760 B |
+| **Swap** | `CDDFCTXVKCG4FSZX3ZMNDQFCD6AHAPSR2PR4Z36HEIJA2FRRGE6Y5SUJ` | clmm_swap_exact_in | 1760 B |
+
+### Legacy Verifier (for testing)
+
+| Contract | Testnet Address | Purpose |
+|----------|-----------------|---------|
+| **Withdraw** | `CBTDPDHITGHVHPRWVYYCNANUY2WOJT2KCAA4NFDHWWYVHTIJVFPOQAZE` | Testing with withdraw circuit |
 
 ## Architecture
 
 The system uses **rs-soroban-ultrahonk** from Nethermind for actual cryptographic verification:
 
 ```
-┌─────────────┐     ┌─────────────────────────────────────────┐
-│   Noir      │     │         Stellar Soroban                  │
-│  Circuits   │     │                                         │
-│             │     │  ┌─────────┐     ┌──────────────────┐   │
-│  • withdraw │────▶│  │  CLMM   │────▶│ UltraHonk        │   │
-│  • clmm_mint│     │  │ Contract│     │ Verifier         │   │
-│  • clmm_burn│     │  └─────────┘     │ (rs-soroban-     │   │
-│  • clmm_swap│     │                  │  ultrahonk)      │   │
-│  • clmm_collect    │                  └──────────────────┘   │
-└─────────────┘     └─────────────────────────────────────────┘
-      │                        │
-      ▼                        ▼
-┌─────────────┐         ┌─────────────────┐
-│    bb       │         │   On-chain      │
-│   prove     │         │   VK Storage    │
-│  (14592 B)  │         │   (1760 bytes)  │
-└─────────────┘         └─────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Noir Circuits                                    │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐        │
+│  │ withdraw │ │clmm_mint │ │clmm_burn │ │clmm_swap │ │clmm_coll │        │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘        │
+│       │            │            │            │            │                │
+│       └────────────┴────────────┴────────────┴────────────┘                │
+│                                    │                                         │
+│                              bb prove                                       │
+│                                    │                                         │
+│                         ┌──────────┴──────────┐                             │
+│                         │   Proof (14592 B)  │                             │
+│                         │ Public Inputs (160B)│                             │
+│                         └──────────┬──────────┘                             │
+└────────────────────────────────────│────────────────────────────────────────┘
+                                     │
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Stellar Soroban                                     │
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                           CLMM Contract                                │   │
+│  │                                                                      │   │
+│  │   mint ────┬──▶ Mint Verifier (clmm_mint VK)                        │   │
+│  │   burn ────┼──▶ Burn Verifier (clmm_burn VK)                        │   │
+│  │   swap ────┼──▶ Swap Verifier (clmm_swap_exact_in VK)              │   │
+│  │   collect ─┴──▶ Collect Verifier (clmm_collect VK)                 │   │
+│  │                                                                      │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                    UltraHonk Verifier (per operation)                │   │
+│  │   • rs-soroban-ultrahonk from Nethermind                           │   │
+│  │   • VK validated in constructor (immutable)                         │   │
+│  │   • verify_proof(public_inputs, proof_bytes) → ()                  │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Current Status
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| CLMM Contract | ✅ Deployed | Uses `Bytes` for proofs + public_inputs |
-| Verifier Contract | ✅ Deployed | Uses rs-soroban-ultrahonk for real UltraHonk |
-| Noir Circuits | ✅ Compiled | Withdraw circuit tested |
-| Verification Key | ✅ Generated | 1760 bytes for UltraHonk |
+| CLMM Contract | ✅ Deployed | Uses operation-specific verifiers |
+| CLMM-specific Verifiers | ✅ Deployed | Mint, Burn, Collect, Swap |
+| Noir Circuits | ✅ Compiled | 5 CLMM circuits + withdraw |
+| CLMM Verification Keys | ✅ Generated | 1760 bytes each for all 5 circuits |
 | VK in Constructor | ✅ Working | VK validated at deploy time |
 | Real Proof Test | ✅ **PASSED** | 14592-byte proof + 160-byte inputs |
 | CLMM-Verifier Flow | ✅ **PASSED** | Full integration works |
+| Multi-verifier Setup | ✅ **PASSED** | Separate VK per operation type |
 
 ## UltraHonk Verification Flow
 
 ### 1. Generate Proof (Off-chain)
 
 ```bash
-cd circuits/noir/withdraw
+cd circuits/noir/<circuit_name>
 nargo compile --force
 nargo execute witness
 
 bb prove --scheme ultra_honk --oracle_hash keccak \
-  -b target/withdraw.json -w target/witness.gz -o target
+  -b target/<circuit_name>.json -w target/witness.gz -o target
 ```
 
 ### 2. Deploy Verifier with VK
