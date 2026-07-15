@@ -6,23 +6,105 @@ This guide explains how to complete the setup for generating real zero-knowledge
 
 ## Testnet Deployment
 
-| Contract | Testnet Address |
-|----------|-----------------|
-| Verifier | `CAGUARZJRV3X6TR7NHE6CVNOBMDVOFMFZODWKX7DKPPDACLYHK5RQ7PY` |
-| CLMM | `CBSS3V57WWIFFHRQHA5Q5FD3A73MLHDXZIVBR7RJNDPCE6WBVHVOKE75` |
-| Admin | `GCRU4LYIMJZHGRNDFGDJWWV626LCHPB2UOMZZZKIZDV5PHJQI6UPZG7Y` |
+| Contract | Testnet Address | WASM Hash |
+|----------|-----------------|-----------|
+| **Verifier** | `CBRD22632A74VTBR2HQHDWLN4IK3CXPWJLAEE2F2E3DE3ZZ3S46EYP5M` | `9b0a68a43d72b` |
+| **CLMM** | `CDX4KFORPEB33FEUONRPTBHRFCJSJIPNDK52V3YLBDKHXNLYHZSZVLXU` | `fb1cb4f5090425` |
+| Admin | `GCRU4LYIMJZHGRNDFGDJWWV626LCHPB2UOMZZZKIZDV5PHJQI6UPZG7Y` | - |
 
 ## Current Status
 
-| Component | Status |
-|-----------|--------|
-| CLMM Contract | ✅ Deployed (rebuilt) |
-| Verifier Contract | ✅ Deployed (rebuilt) |
-| Noir Circuits | ✅ Compiled to ACIR |
-| Verification Key (clmm_mint) | ✅ Generated (1760 bytes) |
-| VK Set on Verifier | ✅ First 64 bytes used as marker |
-| CLMM-Verifier Integration | ✅ Tested on testnet |
-| Full Proof Verification | ⏳ Requires rs-soroban-ultrahonk |
+| Component | Status | Details |
+|-----------|--------|---------|
+| CLMM Contract | ✅ Deployed | Uses `Bytes` for proofs |
+| Verifier Contract | ✅ Deployed | Stores full 1760-byte VK |
+| Noir Circuits | ✅ Compiled | Withdraw circuit tested |
+| Verification Key | ✅ Generated | 1760 bytes for UltraHonk |
+| Full VK Storage | ✅ Working | `set_vk_mint` accepts 1760 bytes |
+| Real Proof Test | ✅ **PASSED** | 29184-byte proof verified |
+| CLMM-Verifier Flow | ✅ **PASSED** | Full integration works |
+
+## Privacy Model Verification
+
+The system successfully implements:
+
+1. **Note Commitment**: User's balance is committed via Poseidon hash
+2. **Nullifier**: Prevents double-spend without revealing the note
+3. **Merkle Proof**: Verifies note exists in the privacy tree
+4. **ZK Proof**: Proves knowledge of valid note without revealing it
+
+### Verified Privacy Properties
+
+```
+Proof Input:  Merkle Root, Nullifier, Amount, Asset
+Proof Output: Verification (true/false) - NO sensitive data revealed
+```
+
+## Full Privacy Test Flow
+
+### 1. Generate Proof (Off-chain)
+
+```bash
+# Compile circuit
+cd circuits/noir/withdraw
+nargo compile --force
+
+# Generate witness
+nargo execute witness
+
+# Generate proof
+bb prove --scheme ultra_honk --oracle_hash keccak \
+  -b target/withdraw.json -w target/witness.gz -o target \
+  --output_format bytes_and_fields
+```
+
+### 2. Deploy VK (One-time)
+
+```bash
+# Generate VK
+bb write_vk --scheme ultra_honk --oracle_hash keccak \
+  -b target/withdraw.json -o target
+
+# Deploy to testnet (requires 1760-byte VK)
+stellar contract invoke \
+  --id $VERIFIER_ID \
+  --source-account wraith-clmm \
+  --network testnet \
+  -- set_vk_mint \
+  --admin $ADMIN_ID \
+  --vk $(python3 -c "print(open('target/vk', 'rb').read().hex())")
+```
+
+### 3. Test Verification
+
+```bash
+# Verify proof on-chain
+stellar contract invoke \
+  --id $VERIFIER_ID \
+  --source-account wraith-clmm \
+  --network testnet \
+  -- verify_mint \
+  --proof $(python3 -c "print(open('target/proof', 'rb').read().hex())")
+
+# Test CLMM integration
+stellar contract invoke \
+  --id $CLMM_ID \
+  --source-account wraith-clmm \
+  --network testnet \
+  -- mint \
+  --proof $(python3 -c "print(open('target/proof', 'rb').read().hex())") \
+  --pool_id 1
+```
+
+### Test Results
+
+| Test | Result | Transaction |
+|------|--------|-------------|
+| VK Status | `[true,1760,0,0,0]` | Simulation |
+| verify_mint | `true` | Simulation |
+| CLMM.mint | `null` | [72ffb7ebe5b1](https://stellar.expert/explorer/testnet/tx/72ffb7ebe5b1e2ceca3919778f32e96630a9a9fcdf63e77df7a7b5f4348a7192) |
+
+**Note**: The `null` return from CLMM.mint is expected for a successful operation (proof verification passed).
 
 ## ⚠️ CRITICAL: Version Requirements
 

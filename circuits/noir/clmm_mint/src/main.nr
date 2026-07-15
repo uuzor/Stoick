@@ -225,6 +225,17 @@ fn test_mint_new_position() {
     let current_tick: Field = 1500;
     let sequence: Field = 1;
     
+    // Print computed values for Prover.toml
+    // These are the hex values needed:
+    // merkle_root: field_to_hex(root)
+    // input_nullifier: field_to_hex(in_nullifier)
+    // new_position_commitment: field_to_hex(new_pos_commitment)
+    // position_nullifier: field_to_hex(pos_nullifier)
+    let _ = root;
+    let _ = in_nullifier;
+    let _ = new_pos_commitment;
+    let _ = pos_nullifier;
+    
     // Call main
     main(
         root, pos_nullifier, 0, new_pos_commitment,

@@ -14,12 +14,12 @@ pub struct Clmm;
 use events::{CollectEvent, MintEvent, PoolCreatedEvent, ProtocolFeeClaimEvent};
 use math::validate_tick_range;
 use soroban_sdk::{
-    contract, contractimpl, contracttype, contracterror, Address, BytesN, Env,
+    contract, contractimpl, contracttype, contracterror, Address, Bytes, BytesN, Env,
 };
 
 // Verifier contract interface
 mod verifier {
-    use soroban_sdk::{contract, contractimpl, contracterror, Address, BytesN, Env};
+    use soroban_sdk::{contract, contractimpl, contracterror, Address, Bytes, Env};
     
     #[contracterror]
     #[repr(u32)]
@@ -29,6 +29,7 @@ mod verifier {
         VerificationFailed = 2,
         VkNotSet = 3,
         InvalidPublicInputs = 4,
+        VkSizeMismatch = 5,
     }
     
     #[contract]
@@ -36,10 +37,10 @@ mod verifier {
     
     #[contractimpl]
     impl ZkVerifier {
-        pub fn verify_mint(env: Env, proof: BytesN<32>) -> Result<bool, VerifierError> { Ok(true) }
-        pub fn verify_burn(env: Env, proof: BytesN<32>) -> Result<bool, VerifierError> { Ok(true) }
-        pub fn verify_swap(env: Env, proof: BytesN<32>) -> Result<bool, VerifierError> { Ok(true) }
-        pub fn verify_collect(env: Env, proof: BytesN<32>) -> Result<bool, VerifierError> { Ok(true) }
+        pub fn verify_mint(env: Env, proof: Bytes) -> Result<bool, VerifierError> { Ok(true) }
+        pub fn verify_burn(env: Env, proof: Bytes) -> Result<bool, VerifierError> { Ok(true) }
+        pub fn verify_swap(env: Env, proof: Bytes) -> Result<bool, VerifierError> { Ok(true) }
+        pub fn verify_collect(env: Env, proof: Bytes) -> Result<bool, VerifierError> { Ok(true) }
     }
 }
 
@@ -192,7 +193,7 @@ impl Clmm {
 
     pub fn mint(
         env: Env,
-        proof: BytesN<32>,
+        proof: Bytes,
         pool_id: u32,
     ) -> Result<(), ClmmError> {
         let s = env.storage().instance();
@@ -215,7 +216,7 @@ impl Clmm {
 
     pub fn burn(
         env: Env,
-        proof: BytesN<32>,
+        proof: Bytes,
         pool_id: u32,
     ) -> Result<(), ClmmError> {
         let s = env.storage().instance();
@@ -238,7 +239,7 @@ impl Clmm {
 
     pub fn swap(
         env: Env,
-        proof: BytesN<32>,
+        proof: Bytes,
         pool_id: u32,
     ) -> Result<u64, ClmmError> {
         let s = env.storage().instance();
@@ -260,7 +261,7 @@ impl Clmm {
 
     pub fn collect(
         env: Env,
-        proof: BytesN<32>,
+        proof: Bytes,
         pool_id: u32,
     ) -> Result<(), ClmmError> {
         let s = env.storage().instance();
