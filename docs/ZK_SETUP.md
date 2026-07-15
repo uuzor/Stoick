@@ -11,85 +11,132 @@ This guide explains how to complete the setup for generating real zero-knowledge
 | CLMM Contract | ✅ Deployed |
 | Verifier Contract | ✅ Deployed |
 | Noir Circuits | ✅ Compiled to ACIR |
-| Proving Keys | ❌ Need generation |
-| Verification Keys | ❌ Need generation |
+| Proving Keys | ❌ Need compatible toolchain |
+| Verification Keys | ❌ Need compatible toolchain |
 | Proof Generation | ❌ Need prover service |
 
-## Version Compatibility Matrix
+## ⚠️ CRITICAL: Version Requirements
 
-| Noir Version | Barretenberg | Status |
-|--------------|--------------|--------|
-| 1.0.0-beta.9 | 0.36.x | ⚠️ Compatible |
-| 1.0.0-beta.11 | 0.38.x | ✅ Recommended |
-| 1.0.0 (stable) | 0.45.x | ✅ Latest |
+**The Wraith project uses PINNED toolchain versions** - do NOT use latest versions!
+
+| Tool | Version | Install Command |
+|------|---------|----------------|
+| `nargo` | **1.0.0-beta.9** | `noirup -v 1.0.0-beta.9` |
+| `bb` | **0.87.0** | `bbup -v 0.87.0` |
+| `poseidon` lib | **v0.2.0** | In Nargo.toml |
+| `stellar` | **27.0.0** | See TOOLCHAIN.md |
+
+**Why pinned versions?**
+- Proof = 14,592 bytes, VK = 1,760 bytes (UltraHonk, keccak)
+- Latest Noir/bb produce: Proof = 4,544 bytes, VK = 1,888 bytes
+- **These are incompatible with the on-chain verifier!**
 
 ## Step 1: Install Compatible Tools
 
-### Option A: Using Noirup (Recommended)
+### 1.1 Install nargo 1.0.0-beta.9
 
 ```bash
-# Install latest stable Noir with matching barretenberg
 curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
 source ~/.bashrc
-noirup --version latest
+noirup -v 1.0.0-beta.9
+
+# Verify
+nargo --version
+# Should output: nargo version = 1.0.0-beta.9
 ```
 
-### Option B: Manual Installation
+### 1.2 Install bbup and bb 0.87.0
 
 ```bash
-# Download compatible versions
-mkdir -p ~/noir/bin
+# Clone and build bbup (the standard installer)
+cd /tmp
+git clone https://github.com/AztecProtocol/aztec-packages.git
+cd aztec-packages/barretenberg/bbup
+cargo build --release
+cargo install --path .
 
-# Download nargo 1.0.0-beta.11
-curl -L https://github.com/noir-lang/noir/releases/download/v1.0.0-beta.11/nargo-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C ~/noir/bin
+# Install bb 0.87.0
+bbup -v 0.87.0
 
-# Download matching barretenberg
-curl -L https://github.com/AztecProtocol/barretenberg/releases/download/v0.38.0/bb-x86_64-linux-gnu.tar.gz | tar -xz -C ~/noir/bin
-
-chmod +x ~/noir/bin/*
-export PATH="$HOME/noir/bin:$PATH"
+# Verify
+bb --version
+# Should output: 0.87.0
 ```
 
-## Step 2: Regenerate Circuits
+### 1.3 Alternative: Direct Download (if bbup fails)
 
 ```bash
-cd /workspace/project/Stoick/circuits/noir
+# Try downloading from known working release
+cd /tmp
+curl -L "https://github.com/AztecProtocol/barretenberg/releases/download/v0.87.0/bb-x86_64-linux-gnu.tar.gz" -o bb.tar.gz
+tar -xzf bb.tar.gz
+chmod +x bb
+mkdir -p ~/.bb
+mv bb ~/.bb/
+export PATH="$HOME/.bb:$PATH"
 
-# Update Nargo.toml to use compatible version
-# Change: noir = "1.0.0-beta.9"
-# To:     noir = "1.0.0-beta.11"
-
-# Recompile all circuits
-cd clmm_mint && nargo compile
-cd ../clmm_burn && nargo compile
-cd ../clmm_swap_exact_in && nargo compile
-cd ../clmm_swap_exact_out && nargo compile
-cd ../clmm_collect && nargo compile
+# Verify
+bb --version
 ```
 
-## Step 3: Generate Proving and Verification Keys
+## Step 2: Set Up Environment
 
 ```bash
-export PATH="$HOME/noir/bin:$PATH"
+# Source the project's env.sh
+cd /workspace/project/Stoick
+source env.sh
+
+# Verify tools
+nargo --version  # Should be 1.0.0-beta.9
+bb --version     # Should be 0.87.0
+```
+
+## Step 3: Generate Keys (Correct Command Syntax)
+
+With bb 0.87.0, use these commands:
+
+```bash
+export PATH="$HOME/.nargo/bin:$HOME/.bb:$HOME/.cargo/bin:$PATH"
 mkdir -p /workspace/project/Stoick/circuits/keys
 
 # For each circuit:
 cd /workspace/project/Stoick/circuits/noir/clmm_mint
 
-# Generate Verification Key
-bb write_vk \
-  -b ./target/clmm_mint.json \
-  -o ./target/clmm_mint_vk.json
+# Generate witness (required before proving)
+nargo execute witness
 
-# Generate Proving Key
-bb write_pk \
+# Generate Verification Key (UltraHonk + Keccak)
+bb write_vk \
+  --scheme ultra_honk \
+  --oracle_hash keccak \
   -b ./target/clmm_mint.json \
-  -o ./target/clmm_mint_pk.json
+  -o ./target \
+  --output_format bytes_and_fields
+
+# Generate Proving Key  
+bb write_pk \
+  --scheme ultra_honk \
+  --oracle_hash keccak \
+  -b ./target/clmm_mint.json \
+  -o ./target \
+  --output_format bytes_and_fields
 
 # Copy keys to keys directory
-cp ./target/clmm_mint_vk.json /workspace/project/Stoick/circuits/keys/
-cp ./target/clmm_mint_pk.json /workspace/project/Stoick/circuits/keys/
+cp ./target/vk /workspace/project/Stoick/circuits/keys/clmm_mint_vk
+cp ./target/proof /workspace/project/Stoick/circuits/keys/clmm_mint_proof
+
+# Verify the proof locally
+bb verify \
+  --scheme ultra_honk \
+  --oracle_hash keccak \
+  -k ./target/vk \
+  -p ./target/proof \
+  -i ./target/public_inputs
 ```
+
+Expected output sizes with these versions:
+- **VK**: 1,760 bytes
+- **Proof**: 14,592 bytes
 
 ## Step 4: Deploy Prover Service
 
@@ -360,17 +407,38 @@ bb verify \
   -p ./proof.json
 ```
 
-### 2. Deploy and Test
+### 2. Deploy Keys to Verifier Contract
+
+The VK must be converted to hex format (1760 bytes = 3520 hex chars):
 
 ```bash
-# Deploy updated verifier with real VK
+# Convert VK to hex
+VK_HEX=$(xxd -p /workspace/project/Stoick/circuits/keys/clmm_mint_vk | tr -d '\n')
+
+# Deploy to verifier contract
 stellar contract invoke \
   --id CDIFJYTYVMJUOD2QOI6P5UIJHRL32AYM75MVCW5T7I6JHPADEXZ3A3WS \
   --source-account wraith-clmm \
   --network testnet \
   -- set_vk_mint \
   --admin GCRU4LYIMJZHGRNDFGDJWWV626LCHPB2UOMZZZKIZDV5PHJQI6UPZG7Y \
-  --vk "$(cat ../keys/clmm_mint_vk.json | base64)"
+  --vk "$VK_HEX"
+
+# Verify VK status
+stellar contract invoke \
+  --id CDIFJYTYVMJUOD2QOI6P5UIJHRL32AYM75MVCW5T7I6JHPADEXZ3A3WS \
+  --source-account wraith-clmm \
+  --network testnet \
+  --send=no \
+  -- get_vk_status
+# Should return: [true,false,false,false]
+```
+
+### 3. Submit a Real Proof
+
+```bash
+# Convert proof to base64 for submission
+PROOF_B64=$(base64 -w0 /workspace/project/Stoick/circuits/keys/clmm_mint_proof)
 
 # Submit proof
 stellar contract invoke \
@@ -378,7 +446,7 @@ stellar contract invoke \
   --source-account user \
   --network testnet \
   -- mint \
-  --proof "$(cat ./proof.json | base64)" \
+  --proof "$PROOF_B64" \
   --pool_id 1
 ```
 
