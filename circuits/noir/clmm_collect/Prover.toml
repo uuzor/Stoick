@@ -1,0 +1,10 @@
+# Prover.toml for clmm_collect circuit
+
+[verification_key]
+path = "target/clmm_collect.vk"
+
+[proof]
+path = "target/clmm_collect.proof"
+
+[public_inputs]
+path = "target/public_inputs"

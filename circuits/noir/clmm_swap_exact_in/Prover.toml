@@ -1,0 +1,10 @@
+# Prover.toml for clmm_swap_exact_in circuit
+
+[verification_key]
+path = "target/clmm_swap_exact_in.vk"
+
+[proof]
+path = "target/clmm_swap_exact_in.proof"
+
+[public_inputs]
+path = "target/public_inputs"

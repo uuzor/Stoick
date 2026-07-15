@@ -1,0 +1,50 @@
+# clmm_mint -- valid witness for testing
+# Public inputs (order is load-bearing)
+merkle_root = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+position_nullifier = "0x0000000000000000000000000000000000000000000000000000000000000000"
+old_position_commitment = "0x0000000000000000000000000000000000000000000000000000000000000000"
+new_position_commitment = "0xabcd1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+_pool_state_old = "0x0001000000000000000001000000000000000100000000000000010000000000001"
+_pool_state_new = "0x0001000000000000000001000000000000000100000000000000010000000000002"
+input_nullifier = "0x0000000000000000000000000000000000000000000000000000000000000000"
+_output_note_commitment = "0xdef78901234567890abcdef1234567890abcdef1234567890abcdef123456"
+_slippage_min_commitment = "0x0000000000000000000000000000000000000000000000000000000000000001"
+
+# Private inputs: input note
+in_note_asset_id = 0
+in_note_amount = 1000000
+in_note_owner_key = "0x1234567890123456789012345678901234567890123456789012345678901234"
+in_note_spending_key = 7
+in_note_blinding = 12345
+in_note_merkle_path = ["0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0"]
+in_note_merkle_indices = ["0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0"]
+
+# Private inputs: position
+pool_id = 1
+tick_lower = -1000
+tick_upper = 1000
+liquidity_delta = 1000000
+fee_growth_inside_0_last = 0
+fee_growth_inside_1_last = 0
+tokens_owed_0 = 0
+tokens_owed_1 = 0
+position_nonce = 1
+position_blinding = 54321
+owner_spending_key = 7
+
+# Private inputs: pool state
+_pool_asset_0 = 0
+_pool_asset_1 = 1
+_pool_sqrt_price = 79228162512
+pool_current_tick = 0
+_pool_liquidity = 1000000
+_pool_fee_growth_global_0 = 0
+_pool_fee_growth_global_1 = 0
+_pool_protocol_fee_0 = 0
+_pool_protocol_fee_1 = 0
+pool_sequence = 0
+pool_tick_spacing = 100
+
+# Private inputs: slippage
+_min_token_0 = 0
+_min_token_1 = 0

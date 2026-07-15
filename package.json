@@ -9,5 +9,8 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint"
+  },
+  "dependencies": {
+    "@aztec/bb.js": "^5.0.0"
   }
 }

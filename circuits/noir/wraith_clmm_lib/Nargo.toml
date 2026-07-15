@@ -1,0 +1,10 @@
+[package]
+name = "wraith_clmm_lib"
+version = "0.1.0"
+edition = "2024"
+type = "lib"
+description = "Wraith CLMM shared circuit library - CLMM math, position commitments, sqrt_price arithmetic"
+
+[dependencies]
+poseidon = { tag = "v0.2.0", git = "https://github.com/noir-lang/poseidon" }
+wraith_lib = { path = "../wraith_lib" }
