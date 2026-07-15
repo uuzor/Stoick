@@ -60,26 +60,52 @@ Stoick/
 ### Noir Circuit Compilation
 ```bash
 # Compile all CLMM circuits
-cd circuits/noir/clmm_mint && nargo compile --force
-cd circuits/noir/clmm_burn && nargo compile --force
-cd circuits/noir/clmm_swap_exact_in && nargo compile --force
-cd circuits/noir/clmm_collect && nargo compile --force
+cd circuits/noir
+for circuit in clmm_mint clmm_burn clmm_swap_exact_in clmm_collect; do
+    cd $circuit && nargo compile --force && cd ..
+done
 ```
+
+### Compiled Circuits Status
+| Circuit | VK Size | Status |
+|---------|---------|--------|
+| clmm_mint | 1760 bytes | ✅ Compiled |
+| clmm_burn | 1760 bytes | ✅ Compiled |
+| clmm_swap_exact_in | 1760 bytes | ✅ Compiled |
+| clmm_collect | 1760 bytes | ✅ Compiled |
 
 ### Generate Proof
 ```bash
-cd circuits/noir/clmm_mint
-nargo execute witness
+# Using the proof generation script
+bash circuits/generate_proof.sh clmm_mint input.json
 
-# This creates:
-# - proofs/proof.bin (14592 bytes)
-# - target/public_inputs.json (160 bytes)
+# Or manually:
+cd circuits/noir/clmm_mint
+nargo compile --force
+nargo execute -p Prover
+
+# For full proof (requires barretenberg/aztec):
+bb prove -k target/vk -i target/$CIRCUIT -o proofs/$CIRCUIT.proof
 ```
 
 ### Proof Format
 - **Proof size**: 14592 bytes
 - **Public inputs**: 160 bytes (5 fields × 32 bytes each)
 - **Public inputs format**: `[merkle_root(32), nullifier(32), commitment(32), ...]`
+
+### Test Inputs
+The circuits include test cases that verify correct computation:
+```bash
+cd circuits/noir/clmm_mint
+nargo test  # Runs: test_mint_new_position, test_mint_existing_wrong_nullifier, etc.
+```
+
+### Client-Side Proof Generation
+In production, proofs are generated client-side:
+1. User creates input (note, position, etc.)
+2. Noir circuit computes witness
+3. barretenberg/aztec generates proof
+4. Proof submitted to CLMM contract
 
 ## Contract Deployment Commands
 
