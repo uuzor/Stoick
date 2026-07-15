@@ -11,8 +11,8 @@ This guide explains how to complete the setup for generating real zero-knowledge
 | CLMM Contract | ✅ Deployed |
 | Verifier Contract | ✅ Deployed |
 | Noir Circuits | ✅ Compiled to ACIR |
-| Proving Keys | ❌ Need compatible toolchain |
-| Verification Keys | ❌ Need compatible toolchain |
+| Verification Key (clmm_mint) | ✅ Generated (1760 bytes) |
+| Proving Key | ❌ Need witness generation |
 | Proof Generation | ❌ Need prover service |
 
 ## ⚠️ CRITICAL: Version Requirements
@@ -63,21 +63,24 @@ bb --version
 # Should output: 0.87.0
 ```
 
-### 1.3 Alternative: Direct Download (if bbup fails)
+### 1.2 Direct Download bb 0.87.0 (Recommended)
 
 ```bash
-# Try downloading from known working release
+# Download from aztec-packages v0.87.0 release
 cd /tmp
-curl -L "https://github.com/AztecProtocol/barretenberg/releases/download/v0.87.0/bb-x86_64-linux-gnu.tar.gz" -o bb.tar.gz
+curl -L "https://github.com/AztecProtocol/aztec-packages/releases/download/v0.87.0/barretenberg-amd64-linux.tar.gz" -o bb.tar.gz
 tar -xzf bb.tar.gz
 chmod +x bb
 mkdir -p ~/.bb
-mv bb ~/.bb/
+mv bb ~/.bb/bb
 export PATH="$HOME/.bb:$PATH"
 
 # Verify
 bb --version
+# Should output: 0.87.0
 ```
+
+> **Note**: The `bb` binary is inside the tar.gz with that exact name (no "barretenberg" prefix).
 
 ## Step 2: Set Up Environment
 
@@ -91,52 +94,40 @@ nargo --version  # Should be 1.0.0-beta.9
 bb --version     # Should be 0.87.0
 ```
 
-## Step 3: Generate Keys (Correct Command Syntax)
+## Step 3: Generate Keys (bb 0.87.0 Command Syntax)
 
 With bb 0.87.0, use these commands:
 
 ```bash
 export PATH="$HOME/.nargo/bin:$HOME/.bb:$HOME/.cargo/bin:$PATH"
 mkdir -p /workspace/project/Stoick/circuits/keys
+mkdir -p /workspace/project/Stoick/circuits/artifacts/clmm_mint
 
 # For each circuit:
 cd /workspace/project/Stoick/circuits/noir/clmm_mint
 
-# Generate witness (required before proving)
-nargo execute witness
+# Compile the circuit (if not already done)
+nargo compile
 
 # Generate Verification Key (UltraHonk + Keccak)
 bb write_vk \
   --scheme ultra_honk \
   --oracle_hash keccak \
   -b ./target/clmm_mint.json \
-  -o ./target \
+  -o /workspace/project/Stoick/circuits/keys \
   --output_format bytes_and_fields
+# Output: vk (1760 bytes), vk_fields.json
 
-# Generate Proving Key  
-bb write_pk \
-  --scheme ultra_honk \
-  --oracle_hash keccak \
-  -b ./target/clmm_mint.json \
-  -o ./target \
-  --output_format bytes_and_fields
+# Copy to artifacts for deployment
+cp /workspace/project/Stoick/circuits/keys/vk /workspace/project/Stoick/circuits/artifacts/clmm_mint/vk
 
-# Copy keys to keys directory
-cp ./target/vk /workspace/project/Stoick/circuits/keys/clmm_mint_vk
-cp ./target/proof /workspace/project/Stoick/circuits/keys/clmm_mint_proof
-
-# Verify the proof locally
-bb verify \
-  --scheme ultra_honk \
-  --oracle_hash keccak \
-  -k ./target/vk \
-  -p ./target/proof \
-  -i ./target/public_inputs
+# Verify the VK size
+wc -c /workspace/project/Stoick/circuits/keys/vk
+# Should output: 1760
 ```
 
-Expected output sizes with these versions:
-- **VK**: 1,760 bytes
-- **Proof**: 14,592 bytes
+> **Note**: The `write_pk` command doesn't exist in bb 0.87.0. The proving key is generated
+> during proof creation with the `prove` command.
 
 ## Step 4: Deploy Prover Service
 
