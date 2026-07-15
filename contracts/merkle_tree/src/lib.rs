@@ -30,6 +30,8 @@ pub enum DataKey {
     MerkleRoot,
     /// Admin address
     Admin,
+    /// Authorized inserter contract (e.g., CLMM)
+    AuthorizedInserter,
     /// Leaf at index
     Leaf(u32),
     /// Cached zero hash at level
@@ -91,6 +93,49 @@ impl MerkleTreeContract {
         env.storage().instance().set(&DataKey::MerkleRoot, &new_root);
         
         Ok((leaf_index, new_root))
+    }
+
+    /// Set authorized inserter (admin only)
+    /// This allows contracts like CLMM to insert without user auth
+    pub fn set_authorized_inserter(env: Env, admin: Address, inserter: Address) -> Result<(), MerkleTreeError> {
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::AuthorizedInserter, &inserter);
+        Ok(())
+    }
+
+    /// Insert a note commitment (authorized by contract, not user)
+    /// This is called by contracts like CLMM after ZK proof verification
+    pub fn authorized_insert(env: Env, leaf: BytesN<32>) -> Result<(u32, BytesN<32>), MerkleTreeError> {
+        // Verify caller is the authorized inserter
+        let caller = env.invoker();
+        let authorized: Option<Address> = env.storage().instance().get(&DataKey::AuthorizedInserter);
+        
+        if authorized.is_none() || authorized.unwrap() != caller {
+            return Err(MerkleTreeError::NotAuthorized);
+        }
+
+        let leaf_count: u32 = env.storage().instance().get(&DataKey::LeafCount).unwrap_or(0);
+
+        // Check if tree is full
+        if leaf_count >= 2u32.pow(TREE_HEIGHT) {
+            return Err(MerkleTreeError::TreeFull);
+        }
+
+        let leaf_index = leaf_count;
+
+        // Store the leaf
+        env.storage().instance().set(&DataKey::Leaf(leaf_index), &leaf);
+
+        // Update leaf count
+        env.storage().instance().set(&DataKey::LeafCount, &(leaf_index + 1));
+
+        // Update Merkle root
+        let new_root = Self::compute_root_from_index(&env, leaf, leaf_index);
+        env.storage().instance().set(&DataKey::MerkleRoot, &new_root);
+
+        Ok((leaf_index, new_root))
+    }
+
     }
 
     /// Batch insert multiple leaves

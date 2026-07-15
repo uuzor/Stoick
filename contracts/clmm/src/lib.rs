@@ -69,12 +69,12 @@ mod ultra_hoink_verifier_client {
     use soroban_sdk::{Address, Bytes, Env, IntoVal};
     
     /// Client for calling the UltraHonkVerifierContract
-    pub struct Client {
+    pub struct VerifierClient {
         env: Env,
         addr: Address,
     }
     
-    impl Client {
+    impl VerifierClient {
         pub fn new(env: Env, addr: Address) -> Self {
             Self { env, addr }
         }
@@ -89,6 +89,36 @@ mod ultra_hoink_verifier_client {
                 &soroban_sdk::Symbol::new(&self.env, "verify_proof"),
                 (public_inputs.clone(), proof.clone()).into_val(&self.env),
             );
+        }
+    }
+}
+
+// Client for Merkle Tree contract
+// Used to insert note commitments after ZK proof verification
+mod merkle_tree_client {
+    use soroban_sdk::{Address, BytesN, Env, IntoVal};
+    
+    /// Client for calling the Merkle Tree contract
+    pub struct MerkleTreeClient {
+        env: Env,
+        addr: Address,
+    }
+    
+    impl MerkleTreeClient {
+        pub fn new(env: Env, addr: Address) -> Self {
+            Self { env, addr }
+        }
+        
+        /// Insert a note commitment into the Merkle tree
+        /// Returns (leaf_index, new_root) on success
+        /// Uses authorized_insert for contract-to-contract calls
+        pub fn insert(&self, commitment: &BytesN<32>) -> (u32, BytesN<32>) {
+            // Use authorized_insert - the Merkle tree must have CLMM set as authorized inserter
+            self.env.invoke_contract::<(u32, BytesN<32>)>(
+                &self.addr,
+                &soroban_sdk::Symbol::new(&self.env, "authorized_insert"),
+                (commitment.clone(),).into_val(&self.env),
+            )
         }
     }
 }
@@ -114,6 +144,8 @@ pub enum DataKey {
     NoteCommitment(u64),
     /// Last operation ID for tracking
     LastOpId(u32),
+    /// Merkle leaf index and new root - stored after successful insertion
+    MerkleLeafIndex(u64),
 }
 
 /// Pool state
@@ -273,12 +305,20 @@ impl Clmm {
         // Format: [merkle_root, nullifier, commitment, ...]
         let note_commitment = parse_commitment_from_inputs(&public_inputs)?;
         
-        // Update pool sequence
+        // Update pool sequence FIRST to get op_id
         let seq: u64 = s.get(&DataKey::PoolSequence(pool_id)).unwrap_or(0) + 1;
         s.set(&DataKey::PoolSequence(pool_id), &(seq));
+        let op_id = seq;
+        
+        // Get Merkle tree address and insert commitment
+        if let Some(merkle_tree_addr) = s.get::<_, Address>(&DataKey::MerkleTree) {
+            let merkle_client = merkle_tree_client::MerkleTreeClient::new(env.clone(), merkle_tree_addr);
+            let (leaf_index, new_root) = merkle_client.insert(&note_commitment);
+            // Store the leaf index and new root for verification
+            s.set(&DataKey::MerkleLeafIndex(op_id), &(leaf_index, new_root));
+        }
         
         // Store operation tracking
-        let op_id = seq;
         s.set(&DataKey::LastOpId(pool_id), &op_id);
         s.set(&DataKey::NoteCommitment(op_id), &note_commitment);
         
@@ -343,12 +383,19 @@ impl Clmm {
         let output_amount = parse_swap_output_from_inputs(&public_inputs)?;
         let output_commitment = parse_commitment_from_inputs(&public_inputs)?;
         
-        // Update pool sequence
+        // Update pool sequence FIRST
         let seq: u64 = s.get(&DataKey::PoolSequence(pool_id)).unwrap_or(0) + 1;
         s.set(&DataKey::PoolSequence(pool_id), &seq);
+        let op_id = seq;
+        
+        // Get Merkle tree address and insert output commitment
+        if let Some(merkle_tree_addr) = s.get::<_, Address>(&DataKey::MerkleTree) {
+            let merkle_client = merkle_tree_client::MerkleTreeClient::new(env.clone(), merkle_tree_addr);
+            let (leaf_index, new_root) = merkle_client.insert(&output_commitment);
+            s.set(&DataKey::MerkleLeafIndex(op_id), &(leaf_index, new_root));
+        }
         
         // Store operation tracking
-        let op_id = seq;
         s.set(&DataKey::LastOpId(pool_id), &op_id);
         s.set(&DataKey::NoteCommitment(op_id), &output_commitment);
         
@@ -379,12 +426,19 @@ impl Clmm {
         let (amount_0, amount_1) = parse_collect_amounts_from_inputs(&public_inputs)?;
         let output_commitment = parse_commitment_from_inputs(&public_inputs)?;
         
-        // Update pool sequence
+        // Update pool sequence FIRST
         let seq: u64 = s.get(&DataKey::PoolSequence(pool_id)).unwrap_or(0) + 1;
         s.set(&DataKey::PoolSequence(pool_id), &(seq));
+        let op_id = seq;
+        
+        // Get Merkle tree address and insert output commitment
+        if let Some(merkle_tree_addr) = s.get::<_, Address>(&DataKey::MerkleTree) {
+            let merkle_client = merkle_tree_client::MerkleTreeClient::new(env.clone(), merkle_tree_addr);
+            let (leaf_index, new_root) = merkle_client.insert(&output_commitment);
+            s.set(&DataKey::MerkleLeafIndex(op_id), &(leaf_index, new_root));
+        }
         
         // Store operation tracking
-        let op_id = seq;
         s.set(&DataKey::LastOpId(pool_id), &op_id);
         s.set(&DataKey::NoteCommitment(op_id), &output_commitment);
         
@@ -404,7 +458,7 @@ impl Clmm {
         
         // Use the UltraHonk verifier client
         // The invoke_contract will panic if verification fails, which is what we want
-        let client = ultra_hoink_verifier_client::Client::new(env.clone(), verifier_addr.clone());
+        let client = ultra_hoink_verifier_client::VerifierClient::new(env.clone(), verifier_addr.clone());
         client.verify_proof(public_inputs, proof);
         
         Ok(())
