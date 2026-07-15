@@ -11,6 +11,7 @@ This guide explains how to complete the setup for generating real zero-knowledge
 | Contract | Testnet Address | Purpose |
 |----------|-----------------|---------|
 | **CLMM** | `CD342DPYVBVZH7NZTCRGDJYMFW774YCMEDQGFE4JBGDRZUR5TWLXTMUP` | Main CLMM contract |
+| **Merkle Tree** | `CDB5PDVSHDCODSXRXX73GN4AU5USNR5CPTJ6KOIAP6KAGMPQXGQTBCKZ` | Note commitment storage |
 | Admin | `GCRU4LYIMJZHGRNDFGDJWWV626LCHPB2UOMZZZKIZDV5PHJQI6UPZG7Y` | Admin account |
 
 ### CLMM Operation Verifiers
@@ -80,11 +81,13 @@ The system uses **rs-soroban-ultrahonk** from Nethermind for actual cryptographi
 |-----------|--------|---------|
 | CLMM Contract | ✅ Deployed | Uses operation-specific verifiers |
 | CLMM-specific Verifiers | ✅ Deployed | Mint, Burn, Collect, Swap |
+| Merkle Tree | ✅ Deployed | Note commitment storage |
 | Noir Circuits | ✅ Compiled | 5 CLMM circuits + withdraw |
 | CLMM Verification Keys | ✅ Generated | 1760 bytes each for all 5 circuits |
 | VK in Constructor | ✅ Working | VK validated at deploy time |
 | Real Proof Test | ✅ **PASSED** | 14592-byte proof + 160-byte inputs |
 | CLMM-Verifier Flow | ✅ **PASSED** | Full integration works |
+| Merkle Tree Insert | ✅ **PASSED** | Leaf insertion and root computation working |
 | Multi-verifier Setup | ✅ **PASSED** | Separate VK per operation type |
 
 ## UltraHonk Verification Flow
