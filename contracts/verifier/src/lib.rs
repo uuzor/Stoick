@@ -1,6 +1,11 @@
 //! ZK Verifier Contract for CLMM Operations
 //!
-//! This contract verifies Groth16 proofs generated from Noir circuits.
+//! This contract verifies UltraHonk proofs generated from Noir circuits.
+//!
+//! Note: This is a placeholder implementation. For production:
+//! - Replace with actual UltraHonk verifier using rs-soroban-ultrahonk
+//! - Store full VK (1760 bytes) for each operation type
+//! - Implement proper proof verification
 
 #![no_std]
 
@@ -12,11 +17,18 @@ use soroban_sdk::{
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
+    /// Full VK for mint operations (1760 bytes)
     VkMint,
+    /// Full VK for burn operations (1760 bytes)
     VkBurn,
+    /// Full VK for swap operations (1760 bytes)
     VkSwap,
+    /// Full VK for collect operations (1760 bytes)
     VkCollect,
+    /// Admin address
     Admin,
+    /// VK is initialized (placeholder for full VK storage)
+    VkInitialized,
 }
 
 /// Verification result
@@ -33,14 +45,10 @@ pub enum VerifierError {
 #[contract]
 pub struct ZkVerifier;
 
-/// Verify a Groth16 proof
+/// Verify an UltraHonk proof
 ///
-/// In production, this would:
-/// 1. Parse the proof bytes (A, B, C elements)
-/// 2. Load the verification key
-/// 3. Perform pairing checks
-///
-/// For now, we implement the interface and accept well-formed proofs.
+/// In production, this would use rs-soroban-ultrahonk for actual verification.
+/// For now, we accept non-zero proofs as valid (placeholder).
 #[contractimpl]
 impl ZkVerifier {
     /// Initialize the verifier with admin
@@ -49,50 +57,51 @@ impl ZkVerifier {
     }
 
     /// Set verification key for mint operations
+    /// Takes first 64 bytes of VK as initialization marker
     pub fn set_vk_mint(env: Env, admin: Address, vk: BytesN<64>) {
         admin.require_auth();
+        // Store initialization marker
         env.storage().instance().set(&DataKey::VkMint, &vk);
+        env.storage().instance().set(&DataKey::VkInitialized, &true);
     }
 
     /// Set verification key for burn operations
     pub fn set_vk_burn(env: Env, admin: Address, vk: BytesN<64>) {
         admin.require_auth();
         env.storage().instance().set(&DataKey::VkBurn, &vk);
+        env.storage().instance().set(&DataKey::VkInitialized, &true);
     }
 
     /// Set verification key for swap operations
     pub fn set_vk_swap(env: Env, admin: Address, vk: BytesN<64>) {
         admin.require_auth();
         env.storage().instance().set(&DataKey::VkSwap, &vk);
+        env.storage().instance().set(&DataKey::VkInitialized, &true);
     }
 
     /// Set verification key for collect operations
     pub fn set_vk_collect(env: Env, admin: Address, vk: BytesN<64>) {
         admin.require_auth();
         env.storage().instance().set(&DataKey::VkCollect, &vk);
+        env.storage().instance().set(&DataKey::VkInitialized, &true);
     }
 
     /// Verify a mint proof
     ///
-    /// Proof format (Groth16 proof encoded as bytes):
-    /// The proof contains G1 and G2 points for the proof elements.
-    ///
-    /// Public inputs should be passed separately and verified against contract state.
-    pub fn verify_mint(env: Env, proof: BytesN<72>) -> Result<bool, VerifierError> {
+    /// UltraHonk proof is variable length. For testing, we accept non-empty proofs.
+    /// In production: Use rs-soroban-ultrahonk for actual verification.
+    pub fn verify_mint(env: Env, proof: BytesN<32>) -> Result<bool, VerifierError> {
         // Check if VK is set
-        let _vk: Option<BytesN<64>> = env.storage().instance().get(&DataKey::VkMint);
-        if _vk.is_none() {
+        let vk_marker: Option<BytesN<64>> = env.storage().instance().get(&DataKey::VkMint);
+        if vk_marker.is_none() {
             return Err(VerifierError::VkNotSet);
         }
 
-        // Convert proof to bytes for validation
-        let proof_bytes = proof.to_bytes();
-        
         // Validate proof format - check if it's a real non-empty proof
-        // In production: perform actual Groth16 verification with pairing checks
+        let proof_bytes = proof.to_bytes();
         let mut has_nonzero = false;
         let mut i = 0u32;
-        while i < 72 {
+        while i < 32 {
             if proof_bytes.get(i).unwrap_or(0) != 0 {
                 has_nonzero = true;
                 break;
@@ -104,20 +113,21 @@ impl ZkVerifier {
             return Err(VerifierError::InvalidProof);
         }
 
+        // In production: perform actual UltraHonk verification
         Ok(true)
     }
 
     /// Verify a burn proof
-    pub fn verify_burn(env: Env, proof: BytesN<72>) -> Result<bool, VerifierError> {
-        let _vk: Option<BytesN<64>> = env.storage().instance().get(&DataKey::VkBurn);
-        if _vk.is_none() {
+    pub fn verify_burn(env: Env, proof: BytesN<32>) -> Result<bool, VerifierError> {
+        let vk_marker: Option<BytesN<64>> = env.storage().instance().get(&DataKey::VkBurn);
+        if vk_marker.is_none() {
             return Err(VerifierError::VkNotSet);
         }
 
         let proof_bytes = proof.to_bytes();
         let mut has_nonzero = false;
         let mut i = 0u32;
-        while i < 72 {
+        while i < 32 {
             if proof_bytes.get(i).unwrap_or(0) != 0 {
                 has_nonzero = true;
                 break;
@@ -133,16 +143,16 @@ impl ZkVerifier {
     }
 
     /// Verify a swap proof
-    pub fn verify_swap(env: Env, proof: BytesN<72>) -> Result<bool, VerifierError> {
-        let _vk: Option<BytesN<64>> = env.storage().instance().get(&DataKey::VkSwap);
-        if _vk.is_none() {
+    pub fn verify_swap(env: Env, proof: BytesN<32>) -> Result<bool, VerifierError> {
+        let vk_marker: Option<BytesN<64>> = env.storage().instance().get(&DataKey::VkSwap);
+        if vk_marker.is_none() {
             return Err(VerifierError::VkNotSet);
         }
 
         let proof_bytes = proof.to_bytes();
         let mut has_nonzero = false;
         let mut i = 0u32;
-        while i < 72 {
+        while i < 32 {
             if proof_bytes.get(i).unwrap_or(0) != 0 {
                 has_nonzero = true;
                 break;
@@ -158,16 +168,16 @@ impl ZkVerifier {
     }
 
     /// Verify a collect proof
-    pub fn verify_collect(env: Env, proof: BytesN<72>) -> Result<bool, VerifierError> {
-        let _vk: Option<BytesN<64>> = env.storage().instance().get(&DataKey::VkCollect);
-        if _vk.is_none() {
+    pub fn verify_collect(env: Env, proof: BytesN<32>) -> Result<bool, VerifierError> {
+        let vk_marker: Option<BytesN<64>> = env.storage().instance().get(&DataKey::VkCollect);
+        if vk_marker.is_none() {
             return Err(VerifierError::VkNotSet);
         }
 
         let proof_bytes = proof.to_bytes();
         let mut has_nonzero = false;
         let mut i = 0u32;
-        while i < 72 {
+        while i < 32 {
             if proof_bytes.get(i).unwrap_or(0) != 0 {
                 has_nonzero = true;
                 break;

@@ -19,17 +19,27 @@ use soroban_sdk::{
 
 // Verifier contract interface
 mod verifier {
-    use soroban_sdk::{contract, contractimpl, Address, BytesN, Env};
+    use soroban_sdk::{contract, contractimpl, contracterror, Address, BytesN, Env};
+    
+    #[contracterror]
+    #[repr(u32)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    pub enum VerifierError {
+        InvalidProof = 1,
+        VerificationFailed = 2,
+        VkNotSet = 3,
+        InvalidPublicInputs = 4,
+    }
     
     #[contract]
     pub struct ZkVerifier;
     
     #[contractimpl]
     impl ZkVerifier {
-        pub fn verify_mint(env: Env, proof: BytesN<72>) -> bool { true }
-        pub fn verify_burn(env: Env, proof: BytesN<72>) -> bool { true }
-        pub fn verify_swap(env: Env, proof: BytesN<72>) -> bool { true }
-        pub fn verify_collect(env: Env, proof: BytesN<72>) -> bool { true }
+        pub fn verify_mint(env: Env, proof: BytesN<32>) -> Result<bool, VerifierError> { Ok(true) }
+        pub fn verify_burn(env: Env, proof: BytesN<32>) -> Result<bool, VerifierError> { Ok(true) }
+        pub fn verify_swap(env: Env, proof: BytesN<32>) -> Result<bool, VerifierError> { Ok(true) }
+        pub fn verify_collect(env: Env, proof: BytesN<32>) -> Result<bool, VerifierError> { Ok(true) }
     }
 }
 
@@ -190,21 +200,9 @@ impl Clmm {
         // Get verifier contract address
         let verifier_addr: Address = s.get(&DataKey::MintVf).ok_or(ClmmError::ProofVerificationFailed)?;
         
-        // Convert proof to 72 bytes for verifier (pad with zeros)
-        let mut proof_arr = [0u8; 72];
-        let proof_bytes = proof.to_bytes();
-        let mut i = 0u32;
-        while i < 32 {
-            proof_arr[i as usize] = proof_bytes.get(i).unwrap_or(0);
-            i += 1;
-        }
-        
-        // Create 72-byte proof for verifier
-        let proof_72 = BytesN::<72>::from_array(&env, &proof_arr);
-        
         // Call verifier contract to verify the proof
         let client = verifier::ZkVerifierClient::new(&env, &verifier_addr);
-        let verified = client.verify_mint(&proof_72);
+        let verified = client.verify_mint(&proof);
         
         if !verified {
             return Err(ClmmError::ProofVerificationFailed);
@@ -225,21 +223,9 @@ impl Clmm {
         // Get verifier contract address
         let verifier_addr: Address = s.get(&DataKey::BurnVf).ok_or(ClmmError::ProofVerificationFailed)?;
         
-        // Convert proof to 72 bytes for verifier (pad with zeros)
-        let mut proof_arr = [0u8; 72];
-        let proof_bytes = proof.to_bytes();
-        let mut i = 0u32;
-        while i < 32 {
-            proof_arr[i as usize] = proof_bytes.get(i).unwrap_or(0);
-            i += 1;
-        }
-        
-        // Create 72-byte proof for verifier
-        let proof_72 = BytesN::<72>::from_array(&env, &proof_arr);
-        
         // Call verifier contract to verify the proof
         let client = verifier::ZkVerifierClient::new(&env, &verifier_addr);
-        let verified = client.verify_burn(&proof_72);
+        let verified = client.verify_burn(&proof);
         
         if !verified {
             return Err(ClmmError::ProofVerificationFailed);
@@ -260,22 +246,9 @@ impl Clmm {
         // Get verifier contract address
         let verifier_addr: Address = s.get(&DataKey::SwapVf).ok_or(ClmmError::ProofVerificationFailed)?;
         
-        // Convert proof to 72 bytes for verifier (pad with zeros)
-        let mut proof_arr = [0u8; 72];
-        let proof_bytes = proof.to_bytes();
-        let mut i = 0u32;
-        while i < 32 {
-            proof_arr[i as usize] = proof_bytes.get(i).unwrap_or(0);
-            i += 1;
-        }
-        
-        // Create 72-byte proof for verifier
-        let proof_72 = BytesN::<72>::from_array(&env, &proof_arr);
-        
         // Call verifier contract to verify the proof
         let client = verifier::ZkVerifierClient::new(&env, &verifier_addr);
-        let verified = client.verify_swap(&proof_72);
-        
+        let verified = client.verify_swap(&proof);
         if !verified {
             return Err(ClmmError::ProofVerificationFailed);
         }
@@ -295,21 +268,9 @@ impl Clmm {
         // Get verifier contract address
         let verifier_addr: Address = s.get(&DataKey::CollectVf).ok_or(ClmmError::ProofVerificationFailed)?;
         
-        // Convert proof to 72 bytes for verifier (pad with zeros)
-        let mut proof_arr = [0u8; 72];
-        let proof_bytes = proof.to_bytes();
-        let mut i = 0u32;
-        while i < 32 {
-            proof_arr[i as usize] = proof_bytes.get(i).unwrap_or(0);
-            i += 1;
-        }
-        
-        // Create 72-byte proof for verifier
-        let proof_72 = BytesN::<72>::from_array(&env, &proof_arr);
-        
         // Call verifier contract to verify the proof
         let client = verifier::ZkVerifierClient::new(&env, &verifier_addr);
-        let verified = client.verify_collect(&proof_72);
+        let verified = client.verify_collect(&proof);
         
         if !verified {
             return Err(ClmmError::ProofVerificationFailed);
