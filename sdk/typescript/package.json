@@ -1,0 +1,27 @@
+{
+  "name": "@wraith/clmm-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for Fully Shielded CLMM on Stellar",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^12.0.0",
+    "@stellar/ts-utils": "^0.2.0",
+    "elliptic": "^6.5.4",
+    "poseidon-wasm": "^0.1.0",
+    "buffalo-utils": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/elliptic": "^6.4.14",
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
