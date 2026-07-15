@@ -1,0 +1,11 @@
+# Prover.toml for clmm_mint circuit
+# Proof generation configuration
+
+[verification_key]
+path = "target/clmm_mint.vk"
+
+[proof]
+path = "target/clmm_mint.proof"
+
+[public_inputs]
+path = "target/public_inputs"

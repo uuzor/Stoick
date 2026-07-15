@@ -1,0 +1,11 @@
+[package]
+name = "clmm_collect"
+version = "0.1.0"
+edition = "2024"
+type = "bin"
+description = "CLMM collect circuit - collect accrued fees from a position"
+
+[dependencies]
+poseidon = { tag = "v0.2.0", git = "https://github.com/noir-lang/poseidon" }
+wraith_lib = { path = "../wraith_lib" }
+wraith_clmm_lib = { path = "../wraith_clmm_lib" }
