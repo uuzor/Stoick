@@ -4,16 +4,25 @@
 
 This guide explains how to complete the setup for generating real zero-knowledge proofs for the Wraith CLMM system.
 
+## Testnet Deployment
+
+| Contract | Testnet Address |
+|----------|-----------------|
+| Verifier | `CAGUARZJRV3X6TR7NHE6CVNOBMDVOFMFZODWKX7DKPPDACLYHK5RQ7PY` |
+| CLMM | `CBSS3V57WWIFFHRQHA5Q5FD3A73MLHDXZIVBR7RJNDPCE6WBVHVOKE75` |
+| Admin | `GCRU4LYIMJZHGRNDFGDJWWV626LCHPB2UOMZZZKIZDV5PHJQI6UPZG7Y` |
+
 ## Current Status
 
 | Component | Status |
 |-----------|--------|
-| CLMM Contract | ✅ Deployed |
-| Verifier Contract | ✅ Deployed |
+| CLMM Contract | ✅ Deployed (rebuilt) |
+| Verifier Contract | ✅ Deployed (rebuilt) |
 | Noir Circuits | ✅ Compiled to ACIR |
 | Verification Key (clmm_mint) | ✅ Generated (1760 bytes) |
-| Proving Key | ❌ Need witness generation |
-| Proof Generation | ❌ Need prover service |
+| VK Set on Verifier | ✅ First 64 bytes used as marker |
+| CLMM-Verifier Integration | ✅ Tested on testnet |
+| Full Proof Verification | ⏳ Requires rs-soroban-ultrahonk |
 
 ## ⚠️ CRITICAL: Version Requirements
 
