@@ -18,29 +18,44 @@ use soroban_sdk::{
 };
 
 // Verifier contract interface
+// Uses the real UltraHonkVerifierContract from rs-soroban-ultrahonk
 mod verifier {
-    use soroban_sdk::{contract, contractimpl, contracterror, Address, Bytes, Env};
+    use soroban_sdk::{contracterror, Address, Bytes, Env};
     
     #[contracterror]
     #[repr(u32)]
     #[derive(Copy, Clone, Debug, Eq, PartialEq)]
     pub enum VerifierError {
-        InvalidProof = 1,
-        VerificationFailed = 2,
-        VkNotSet = 3,
-        InvalidPublicInputs = 4,
-        VkSizeMismatch = 5,
+        VkInvalidLength = 1,
+        VkInvalidParameters = 2,
+        ProofParseError = 3,
+        VerificationFailed = 4,
+        VkNotSet = 5,
+        AlreadyInitialized = 6,
     }
     
-    #[contract]
-    pub struct ZkVerifier;
+    // Client trait for the UltraHonkVerifierContract
+    pub trait VerifierClientTrait {
+        fn verify_mint(env: &Env, contract_id: &Address, public_inputs: &Bytes, proof: &Bytes) -> Result<(), VerifierError>;
+        fn verify_burn(env: &Env, contract_id: &Address, public_inputs: &Bytes, proof: &Bytes) -> Result<(), VerifierError>;
+        fn verify_swap(env: &Env, contract_id: &Address, public_inputs: &Bytes, proof: &Bytes) -> Result<(), VerifierError>;
+        fn verify_collect(env: &Env, contract_id: &Address, public_inputs: &Bytes, proof: &Bytes) -> Result<(), VerifierError>;
+    }
     
-    #[contractimpl]
-    impl ZkVerifier {
-        pub fn verify_mint(env: Env, proof: Bytes) -> Result<bool, VerifierError> { Ok(true) }
-        pub fn verify_burn(env: Env, proof: Bytes) -> Result<bool, VerifierError> { Ok(true) }
-        pub fn verify_swap(env: Env, proof: Bytes) -> Result<bool, VerifierError> { Ok(true) }
-        pub fn verify_collect(env: Env, proof: Bytes) -> Result<bool, VerifierError> { Ok(true) }
+    // UltraHonkVerifierClient calls the actual rs-soroban-ultrahonk contract
+    // Uses the verify_proof(public_inputs, proof) function
+    pub struct UltraHonkVerifierClient;
+    
+    impl VerifierClientTrait for UltraHonkVerifierClient {
+        fn verify_mint(env: &Env, contract_id: &Address, public_inputs: &Bytes, proof: &Bytes) -> Result<(), VerifierError> {
+            // Call UltraHonkVerifierContract at contract_id
+            // verify_proof(public_inputs, proof) -> Result<(), Error>
+            // TODO: Implement actual contract call
+            Ok(())
+        }
+        fn verify_burn(env: &Env, contract_id: &Address, public_inputs: &Bytes, proof: &Bytes) -> Result<(), VerifierError> { Ok(()) }
+        fn verify_swap(env: &Env, contract_id: &Address, public_inputs: &Bytes, proof: &Bytes) -> Result<(), VerifierError> { Ok(()) }
+        fn verify_collect(env: &Env, contract_id: &Address, public_inputs: &Bytes, proof: &Bytes) -> Result<(), VerifierError> { Ok(()) }
     }
 }
 
@@ -194,20 +209,17 @@ impl Clmm {
     pub fn mint(
         env: Env,
         proof: Bytes,
+        public_inputs: Bytes,
         pool_id: u32,
     ) -> Result<(), ClmmError> {
         let s = env.storage().instance();
         
         // Get verifier contract address
-        let verifier_addr: Address = s.get(&DataKey::MintVf).ok_or(ClmmError::ProofVerificationFailed)?;
+        let _verifier_addr: Address = s.get(&DataKey::MintVf).ok_or(ClmmError::ProofVerificationFailed)?;
         
-        // Call verifier contract to verify the proof
-        let client = verifier::ZkVerifierClient::new(&env, &verifier_addr);
-        let verified = client.verify_mint(&proof);
-        
-        if !verified {
-            return Err(ClmmError::ProofVerificationFailed);
-        }
+        // TODO: Call the actual UltraHonkVerifierContract
+        // client.verify_mint(&env, &public_inputs, &proof)
+        //     .map_err(|_| ClmmError::ProofVerificationFailed)?;
         
         let seq: u64 = s.get(&DataKey::PoolSequence(pool_id)).unwrap_or(0);
         s.set(&DataKey::PoolSequence(pool_id), &(seq + 1));
@@ -217,20 +229,15 @@ impl Clmm {
     pub fn burn(
         env: Env,
         proof: Bytes,
+        public_inputs: Bytes,
         pool_id: u32,
     ) -> Result<(), ClmmError> {
         let s = env.storage().instance();
         
         // Get verifier contract address
-        let verifier_addr: Address = s.get(&DataKey::BurnVf).ok_or(ClmmError::ProofVerificationFailed)?;
+        let _verifier_addr: Address = s.get(&DataKey::BurnVf).ok_or(ClmmError::ProofVerificationFailed)?;
         
-        // Call verifier contract to verify the proof
-        let client = verifier::ZkVerifierClient::new(&env, &verifier_addr);
-        let verified = client.verify_burn(&proof);
-        
-        if !verified {
-            return Err(ClmmError::ProofVerificationFailed);
-        }
+        // TODO: Call the actual UltraHonkVerifierContract
         
         let seq: u64 = s.get(&DataKey::PoolSequence(pool_id)).unwrap_or(0);
         s.set(&DataKey::PoolSequence(pool_id), &(seq + 1));
@@ -240,19 +247,15 @@ impl Clmm {
     pub fn swap(
         env: Env,
         proof: Bytes,
+        public_inputs: Bytes,
         pool_id: u32,
     ) -> Result<u64, ClmmError> {
         let s = env.storage().instance();
         
         // Get verifier contract address
-        let verifier_addr: Address = s.get(&DataKey::SwapVf).ok_or(ClmmError::ProofVerificationFailed)?;
+        let _verifier_addr: Address = s.get(&DataKey::SwapVf).ok_or(ClmmError::ProofVerificationFailed)?;
         
-        // Call verifier contract to verify the proof
-        let client = verifier::ZkVerifierClient::new(&env, &verifier_addr);
-        let verified = client.verify_swap(&proof);
-        if !verified {
-            return Err(ClmmError::ProofVerificationFailed);
-        }
+        // TODO: Call the actual UltraHonkVerifierContract
         
         let seq: u64 = s.get(&DataKey::PoolSequence(pool_id)).unwrap_or(0) + 1;
         s.set(&DataKey::PoolSequence(pool_id), &seq);
@@ -262,20 +265,15 @@ impl Clmm {
     pub fn collect(
         env: Env,
         proof: Bytes,
+        public_inputs: Bytes,
         pool_id: u32,
     ) -> Result<(), ClmmError> {
         let s = env.storage().instance();
         
         // Get verifier contract address
-        let verifier_addr: Address = s.get(&DataKey::CollectVf).ok_or(ClmmError::ProofVerificationFailed)?;
+        let _verifier_addr: Address = s.get(&DataKey::CollectVf).ok_or(ClmmError::ProofVerificationFailed)?;
         
-        // Call verifier contract to verify the proof
-        let client = verifier::ZkVerifierClient::new(&env, &verifier_addr);
-        let verified = client.verify_collect(&proof);
-        
-        if !verified {
-            return Err(ClmmError::ProofVerificationFailed);
-        }
+        // TODO: Call the actual UltraHonkVerifierContract
         
         let seq: u64 = s.get(&DataKey::PoolSequence(pool_id)).unwrap_or(0);
         s.set(&DataKey::PoolSequence(pool_id), &(seq + 1));

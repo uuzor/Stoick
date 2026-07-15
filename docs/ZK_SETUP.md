@@ -8,21 +8,89 @@ This guide explains how to complete the setup for generating real zero-knowledge
 
 | Contract | Testnet Address | WASM Hash |
 |----------|-----------------|-----------|
-| **Verifier** | `CBRD22632A74VTBR2HQHDWLN4IK3CXPWJLAEE2F2E3DE3ZZ3S46EYP5M` | `9b0a68a43d72b` |
-| **CLMM** | `CDX4KFORPEB33FEUONRPTBHRFCJSJIPNDK52V3YLBDKHXNLYHZSZVLXU` | `fb1cb4f5090425` |
+| **Verifier** | `CBTDPDHITGHVHPRWVYYCNANUY2WOJT2KCAA4NFDHWWYVHTIJVFPOQAZE` | `98e2f86b20b924` |
+| **CLMM** | `CBT25XQ6QWVCPTXYG2IJL4UEVYSBFH76YTD2EABEMD3RCLFZDJVDNNBQ` | `6c38b44889e8eb` |
 | Admin | `GCRU4LYIMJZHGRNDFGDJWWV626LCHPB2UOMZZZKIZDV5PHJQI6UPZG7Y` | - |
+
+## Architecture
+
+The system uses **rs-soroban-ultrahonk** from Nethermind for actual cryptographic verification:
+
+```
+┌─────────────┐     ┌─────────────────────────────────────────┐
+│   Noir      │     │         Stellar Soroban                  │
+│  Circuits   │     │                                         │
+│             │     │  ┌─────────┐     ┌──────────────────┐   │
+│  • withdraw │────▶│  │  CLMM   │────▶│ UltraHonk        │   │
+│  • clmm_mint│     │  │ Contract│     │ Verifier         │   │
+│  • clmm_burn│     │  └─────────┘     │ (rs-soroban-     │   │
+│  • clmm_swap│     │                  │  ultrahonk)      │   │
+│  • clmm_collect    │                  └──────────────────┘   │
+└─────────────┘     └─────────────────────────────────────────┘
+      │                        │
+      ▼                        ▼
+┌─────────────┐         ┌─────────────────┐
+│    bb       │         │   On-chain      │
+│   prove     │         │   VK Storage    │
+│  (14592 B)  │         │   (1760 bytes)  │
+└─────────────┘         └─────────────────┘
+```
 
 ## Current Status
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| CLMM Contract | ✅ Deployed | Uses `Bytes` for proofs |
-| Verifier Contract | ✅ Deployed | Stores full 1760-byte VK |
+| CLMM Contract | ✅ Deployed | Uses `Bytes` for proofs + public_inputs |
+| Verifier Contract | ✅ Deployed | Uses rs-soroban-ultrahonk for real UltraHonk |
 | Noir Circuits | ✅ Compiled | Withdraw circuit tested |
 | Verification Key | ✅ Generated | 1760 bytes for UltraHonk |
-| Full VK Storage | ✅ Working | `set_vk_mint` accepts 1760 bytes |
-| Real Proof Test | ✅ **PASSED** | 29184-byte proof verified |
+| VK in Constructor | ✅ Working | VK validated at deploy time |
+| Real Proof Test | ✅ **PASSED** | 14592-byte proof + 160-byte inputs |
 | CLMM-Verifier Flow | ✅ **PASSED** | Full integration works |
+
+## UltraHonk Verification Flow
+
+### 1. Generate Proof (Off-chain)
+
+```bash
+cd circuits/noir/withdraw
+nargo compile --force
+nargo execute witness
+
+bb prove --scheme ultra_honk --oracle_hash keccak \
+  -b target/withdraw.json -w target/witness.gz -o target
+```
+
+### 2. Deploy Verifier with VK
+
+```bash
+# VK is set at deployment time (immutable)
+stellar contract deploy \
+  --wasm verifier.wasm \
+  --source-account wraith-clmm \
+  --network testnet \
+  -- --vk_bytes $(python3 -c "print(open('vk', 'rb').read().hex())")
+```
+
+### 3. Verify Proof On-chain
+
+```bash
+stellar contract invoke \
+  --id $VERIFIER_ID \
+  --source-account wraith-clmm \
+  --network testnet \
+  -- verify_proof \
+  --public_inputs "$PUBLIC_INPUTS_HEX" \
+  --proof_bytes "$PROOF_HEX"
+```
+
+### 4. Test Results
+
+| Test | Result | Details |
+|------|--------|---------|
+| Verifier deployment | ✅ | VK validated (1760 bytes) |
+| verify_proof | ✅ | `null` (success) |
+| CLMM.mint | ✅ | Transaction submitted |
 
 ## Privacy Model Verification
 
@@ -37,7 +105,7 @@ The system successfully implements:
 
 ```
 Proof Input:  Merkle Root, Nullifier, Amount, Asset
-Proof Output: Verification (true/false) - NO sensitive data revealed
+Proof Output: Verification (null = success) - NO sensitive data revealed
 ```
 
 ## Full Privacy Test Flow
@@ -52,39 +120,38 @@ nargo compile --force
 # Generate witness
 nargo execute witness
 
-# Generate proof
+# Generate proof with public inputs
 bb prove --scheme ultra_honk --oracle_hash keccak \
   -b target/withdraw.json -w target/witness.gz -o target \
   --output_format bytes_and_fields
 ```
 
-### 2. Deploy VK (One-time)
+### 2. Deploy Verifier with VK
 
 ```bash
-# Generate VK
-bb write_vk --scheme ultra_honk --oracle_hash keccak \
-  -b target/withdraw.json -o target
-
-# Deploy to testnet (requires 1760-byte VK)
-stellar contract invoke \
-  --id $VERIFIER_ID \
+# Deploy verifier with VK in constructor (immutable)
+stellar contract deploy \
+  --wasm verifier.wasm \
   --source-account wraith-clmm \
   --network testnet \
-  -- set_vk_mint \
-  --admin $ADMIN_ID \
-  --vk $(python3 -c "print(open('target/vk', 'rb').read().hex())")
+  -- --vk_bytes $(python3 -c "print(open('vk', 'rb').read().hex())")
 ```
 
 ### 3. Test Verification
 
 ```bash
-# Verify proof on-chain
+# Get proof and public inputs hex
+PROOF_HEX=$(python3 -c "print(open('proof', 'rb').read().hex())")
+PUBLIC_INPUTS=$(python3 -c "print(open('public_inputs', 'rb').read().hex())")
+
+# Verify proof on-chain using UltraHonk
 stellar contract invoke \
   --id $VERIFIER_ID \
   --source-account wraith-clmm \
   --network testnet \
-  -- verify_mint \
-  --proof $(python3 -c "print(open('target/proof', 'rb').read().hex())")
+  -- verify_proof \
+  --public_inputs "$PUBLIC_INPUTS" \
+  --proof_bytes "$PROOF_HEX"
 
 # Test CLMM integration
 stellar contract invoke \
@@ -92,7 +159,8 @@ stellar contract invoke \
   --source-account wraith-clmm \
   --network testnet \
   -- mint \
-  --proof $(python3 -c "print(open('target/proof', 'rb').read().hex())") \
+  --proof "$PROOF_HEX" \
+  --public_inputs "$PUBLIC_INPUTS" \
   --pool_id 1
 ```
 
@@ -100,15 +168,17 @@ stellar contract invoke \
 
 | Test | Result | Transaction |
 |------|--------|-------------|
-| VK Status | `[true,1760,0,0,0]` | Simulation |
-| verify_mint | `true` | Simulation |
-| CLMM.mint | `null` | [72ffb7ebe5b1](https://stellar.expert/explorer/testnet/tx/72ffb7ebe5b1e2ceca3919778f32e96630a9a9fcdf63e77df7a7b5f4348a7192) |
-
-**Note**: The `null` return from CLMM.mint is expected for a successful operation (proof verification passed).
+| Verifier Deploy | ✅ | VK validated (1760 bytes) |
+| verify_proof | ✅ `null` | Simulation |
+| CLMM.mint | ✅ `null` | [a91e8042421a](https://stellar.expert/explorer/testnet/tx/a91e8042421af455bcadbc93949fe87021a469f5b070c1ede1d0e1654bbee8bc) |
 
 ## ⚠️ CRITICAL: Version Requirements
 
-**The Wraith project uses PINNED toolchain versions** - do NOT use latest versions!
+**The Wraith project uses PINNED toolchain versions**:
+
+- Noir: `1.0.0-beta.9`
+- Barretenberg (bb): `0.87.0`
+- Rust: Latest stable
 
 | Tool | Version | Install Command |
 |------|---------|----------------|

@@ -1156,6 +1156,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rs-soroban-ultrahonk"
+version = "0.1.0"
+source = "git+https://github.com/NethermindEth/rs-soroban-ultrahonk#661db07200f890b1bd9a7349ed787c70a706dd12"
+dependencies = [
+ "soroban-sdk",
+ "ultrahonk_soroban_verifier",
+]
+
+[[package]]
 name = "rustc_version"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1714,6 +1723,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
+name = "ultrahonk_soroban_verifier"
+version = "0.1.0"
+source = "git+https://github.com/NethermindEth/rs-soroban-ultrahonk#661db07200f890b1bd9a7349ed787c70a706dd12"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1723,6 +1740,7 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 name = "verifier"
 version = "0.1.0"
 dependencies = [
+ "rs-soroban-ultrahonk",
  "soroban-sdk",
 ]
 
