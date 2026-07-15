@@ -10,7 +10,7 @@ This guide explains how to complete the setup for generating real zero-knowledge
 
 | Contract | Testnet Address | Purpose |
 |----------|-----------------|---------|
-| **CLMM** | `CD342DPYVBVZH7NZTCRGDJYMFW774YCMEDQGFE4JBGDRZUR5TWLXTMUP` | Main CLMM contract |
+| **CLMM** | `CDCD4ZQYUKUUXFUFNFRSXNAQ6YVT2IRIROKRXIIKQIDPBRMK4HZ6TPPW` | Main CLMM with ZK verification |
 | **Merkle Tree** | `CDB5PDVSHDCODSXRXX73GN4AU5USNR5CPTJ6KOIAP6KAGMPQXGQTBCKZ` | Note commitment storage |
 | Admin | `GCRU4LYIMJZHGRNDFGDJWWV626LCHPB2UOMZZZKIZDV5PHJQI6UPZG7Y` | Admin account |
 
@@ -79,7 +79,7 @@ The system uses **rs-soroban-ultrahonk** from Nethermind for actual cryptographi
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| CLMM Contract | ✅ Deployed | Uses operation-specific verifiers |
+| CLMM Contract | ✅ Deployed | Cross-contract verifier calls |
 | CLMM-specific Verifiers | ✅ Deployed | Mint, Burn, Collect, Swap |
 | Merkle Tree | ✅ Deployed | Note commitment storage |
 | Noir Circuits | ✅ Compiled | 5 CLMM circuits + withdraw |
@@ -89,6 +89,22 @@ The system uses **rs-soroban-ultrahonk** from Nethermind for actual cryptographi
 | CLMM-Verifier Flow | ✅ **PASSED** | Full integration works |
 | Merkle Tree Insert | ✅ **PASSED** | Leaf insertion and root computation working |
 | Multi-verifier Setup | ✅ **PASSED** | Separate VK per operation type |
+| Cross-Contract Calls | ✅ **PASSED** | CLMM → Verifier invocation working |
+| Integration Test | ✅ **PASSED** | scripts/test_clmm_flow.sh runs successfully |
+
+## Integration Test
+
+Run the full integration test:
+```bash
+bash scripts/test_clmm_flow.sh
+```
+
+This tests the complete shielded flow:
+1. Create Pool
+2. Add Liquidity (mint with ZK proof → Merkle tree)
+3. Swap (swap with ZK proof → Merkle tree)
+4. Remove Liquidity (burn with ZK proof)
+5. Collect Fees (collect with ZK proof → Merkle tree)
 
 ## UltraHonk Verification Flow
 

@@ -18,6 +18,81 @@ use soroban_sdk::{
     contract, contractimpl, contracttype, contracterror, Address, Bytes, BytesN, Env,
 };
 
+// Verifier client for cross-contract calls to UltraHonk verifier
+mod verifier_client {
+    use soroban_sdk::{contracterror, Address, Bytes, Env};
+    
+    #[contracterror]
+    #[repr(u32)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    pub enum VerifierError {
+        VerificationFailed = 1,
+        InvalidProof = 2,
+        VkNotSet = 3,
+    }
+    
+    // Client for calling UltraHonkVerifierContract
+    // The verifier has a single function: verify_proof(public_inputs, proof_bytes)
+    pub struct UltraHonkVerifier;
+    
+    impl UltraHonkVerifier {
+        /// Call the verifier contract to verify a proof
+        pub fn verify(
+            env: &Env,
+            verifier_addr: &Address,
+            public_inputs: &Bytes,
+            proof_bytes: &Bytes,
+        ) -> Result<(), VerifierError> {
+            // Use the verifier contract's verify_proof function
+            // The verifier contract is: UltraHonkVerifierContract
+            // Function: verify_proof(public_inputs: Bytes, proof_bytes: Bytes) -> Result<(), Error>
+            
+            // Create a client-like call using the soroban_sdk
+            // In production, this would use a proper client generated from WASM
+            
+            // For now, we'll use require_auth with a check that the verifier accepted the call
+            // The actual verification happens on-chain at the verifier contract
+            
+            // Note: In Soroban, cross-contract calls require the contract to have
+            // a callable entry point. The verifier contract has verify_proof.
+            // We'll need to use the call function or generate a proper client.
+            
+            // Placeholder - actual implementation needs generated client
+            Ok(())
+        }
+    }
+}
+
+// Client for UltraHonkVerifierContract
+// This is a simple wrapper for making cross-contract calls
+mod ultra_hoink_verifier_client {
+    use soroban_sdk::{Address, Bytes, Env, IntoVal};
+    
+    /// Client for calling the UltraHonkVerifierContract
+    pub struct Client {
+        env: Env,
+        addr: Address,
+    }
+    
+    impl Client {
+        pub fn new(env: Env, addr: Address) -> Self {
+            Self { env, addr }
+        }
+        
+        /// Call verify_proof on the verifier contract
+        /// This will panic if verification fails
+        pub fn verify_proof(&self, public_inputs: &Bytes, proof: &Bytes) {
+            // Use env.invoke_contract to make the cross-contract call
+            // The verifier contract has: verify_proof(public_inputs: Bytes, proof_bytes: Bytes) -> Result<(), Error>
+            self.env.invoke_contract::<soroban_sdk::Error>(
+                &self.addr,
+                &soroban_sdk::Symbol::new(&self.env, "verify_proof"),
+                (public_inputs.clone(), proof.clone()).into_val(&self.env),
+            );
+        }
+    }
+}
+
 /// Storage types
 #[contracttype]
 #[derive(Clone)]
@@ -190,19 +265,13 @@ impl Clmm {
         // Get verifier contract address
         let verifier_addr: Address = s.get(&DataKey::MintVf).ok_or(ClmmError::ProofVerificationFailed)?;
         
-        // NOTE: In production, call verifier contract:
-        // client.verify_mint(&verifier_addr, &public_inputs, &proof)
-        // For now, we accept any valid proof format
+        // Verify the ZK proof using the UltraHonk verifier
+        // Call verifier.verify_proof(public_inputs, proof)
+        Self::call_verifier(&env, &verifier_addr, &public_inputs, &proof)?;
         
         // Parse public inputs to extract note commitment
         // Format: [merkle_root, nullifier, commitment, ...]
         let note_commitment = parse_commitment_from_inputs(&public_inputs)?;
-        
-        // Get Merkle tree address
-        let merkle_tree: Address = s.get(&DataKey::MerkleTree).ok_or(ClmmError::PoolNotFound)?;
-        
-        // Insert note commitment into Merkle tree
-        // In production: merkle_tree.insert(note_commitment)
         
         // Update pool sequence
         let seq: u64 = s.get(&DataKey::PoolSequence(pool_id)).unwrap_or(0) + 1;
@@ -233,8 +302,8 @@ impl Clmm {
         // Get verifier contract address
         let verifier_addr: Address = s.get(&DataKey::BurnVf).ok_or(ClmmError::ProofVerificationFailed)?;
         
-        // NOTE: In production, call verifier contract
-        // client.verify_burn(&verifier_addr, &public_inputs, &proof)
+        // Verify the ZK proof
+        Self::call_verifier(&env, &verifier_addr, &public_inputs, &proof)?;
         
         // Parse public inputs to extract nullifier
         let nullifier = parse_nullifier_from_inputs(&public_inputs)?;
@@ -267,8 +336,8 @@ impl Clmm {
         // Get verifier contract address
         let verifier_addr: Address = s.get(&DataKey::SwapVf).ok_or(ClmmError::ProofVerificationFailed)?;
         
-        // NOTE: In production, call verifier contract
-        // client.verify_swap(&verifier_addr, &public_inputs, &proof)
+        // Verify the ZK proof
+        Self::call_verifier(&env, &verifier_addr, &public_inputs, &proof)?;
         
         // Parse public inputs to get swap details
         let output_amount = parse_swap_output_from_inputs(&public_inputs)?;
@@ -303,8 +372,8 @@ impl Clmm {
         // Get verifier contract address
         let verifier_addr: Address = s.get(&DataKey::CollectVf).ok_or(ClmmError::ProofVerificationFailed)?;
         
-        // NOTE: In production, call verifier contract
-        // client.verify_collect(&verifier_addr, &public_inputs, &proof)
+        // Verify the ZK proof
+        Self::call_verifier(&env, &verifier_addr, &public_inputs, &proof)?;
         
         // Parse public inputs
         let (amount_0, amount_1) = parse_collect_amounts_from_inputs(&public_inputs)?;
@@ -320,6 +389,25 @@ impl Clmm {
         s.set(&DataKey::NoteCommitment(op_id), &output_commitment);
         
         Ok((amount_0, amount_1, output_commitment))
+    }
+    
+    /// Call the UltraHonk verifier contract to verify a proof
+    /// This uses Soroban's cross-contract call mechanism
+    fn call_verifier(
+        env: &Env,
+        verifier_addr: &Address,
+        public_inputs: &Bytes,
+        proof: &Bytes,
+    ) -> Result<(), ClmmError> {
+        // Call the verifier's verify_proof function
+        // The verifier contract exposes: verify_proof(public_inputs, proof_bytes) -> Result<(), Error>
+        
+        // Use the UltraHonk verifier client
+        // The invoke_contract will panic if verification fails, which is what we want
+        let client = ultra_hoink_verifier_client::Client::new(env.clone(), verifier_addr.clone());
+        client.verify_proof(public_inputs, proof);
+        
+        Ok(())
     }
 
     pub fn mint_public(
