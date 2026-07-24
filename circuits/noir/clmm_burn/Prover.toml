@@ -1,10 +1,43 @@
-# Prover.toml for clmm_burn circuit
+_merkle_root = "0x1d309019ec6b0d0af00a93caac5713dbda4a73efce3c70d8ed710651678d45b9"
+position_nullifier = "0x2dd4922771c7aa40117eebf3df979f8c05546d1a8424e82c55c0ee3cbf32c5e4"
+old_position_commitment = "0x28bde0beb830448698ad9cb60c7012e27f0891b15dd8dd5933ba9490ba5a0e90"
+new_position_commitment = "0x0"
+pool_state_old = "0x00a10b91d1811224833822772ccecc53c76600d25b662eb809cc1a2ad3dd3113"
+_pool_state_new = "0x0"
+output_commitment_0 = "0x06f3507f3dfbf95de6199ebfbb59d4b8cdf4b7a34bec69fa0f6a21d1e29fdf99"
+output_commitment_1 = "0x2b474d1b1c84ca7ee8630450e5d75083dd09ad9abef893710b6c21ec28913476"
 
-[verification_key]
-path = "target/clmm_burn.vk"
+pool_id = "1"
+tick_lower = "1000"
+tick_upper = "2000"
+old_liquidity = "100000"
+liquidity_to_burn = "100000"
+fee_growth_inside_0_last = "0"
+fee_growth_inside_1_last = "0"
+tokens_owed_0 = "0"
+tokens_owed_1 = "0"
+position_nonce = "2"
+position_blinding = "12346"
+owner_spending_key = "7"
+owner_owner_key = "0x0b0f697117aa52458ddd243aeeac42e2a58175474f8889f3d763521eea2ce64b"
+position_merkle_path = ["0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0"]
+position_merkle_indices = ["0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0"]
 
-[proof]
-path = "target/clmm_burn.proof"
+_pool_asset_0 = "0"
+_pool_asset_1 = "1"
+_pool_sqrt_price = "281474976710656"
+pool_current_tick = "1500"
+_pool_liquidity = "1000000"
+pool_fee_growth_global_0 = "0"
+pool_fee_growth_global_1 = "0"
+pool_sequence = "2"
+pool_tick_spacing = "100"
 
-[public_inputs]
-path = "target/public_inputs"
+out_0_asset = "0"
+out_0_amount = "0"
+out_0_owner_key = "0x0b0f697117aa52458ddd243aeeac42e2a58175474f8889f3d763521eea2ce64b"
+out_0_blinding = "111"
+out_1_asset = "1"
+out_1_amount = "0"
+out_1_owner_key = "0x0b0f697117aa52458ddd243aeeac42e2a58175474f8889f3d763521eea2ce64b"
+out_1_blinding = "222"

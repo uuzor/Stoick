@@ -13,9 +13,7 @@
 
 mod hash;
 
-use soroban_sdk::{
-    contract, contractimpl, contracttype, contracterror, Address, BytesN, Bytes, Vec, Env,
-};
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, Vec};
 
 /// Tree height - supports 2^20 ≈ 1 million leaves
 const TREE_HEIGHT: u32 = 20;
@@ -89,7 +87,7 @@ impl MerkleTreeContract {
         env.storage().instance().set(&DataKey::LeafCount, &(leaf_index + 1));
         
         // Update Merkle root
-        let new_root = Self::compute_root_from_index(&env, leaf, leaf_index);
+        let new_root = Self::compute_root_from_leaves(&env, 0, leaf_index + 1);
         env.storage().instance().set(&DataKey::MerkleRoot, &new_root);
         
         Ok((leaf_index, new_root))
@@ -105,12 +103,11 @@ impl MerkleTreeContract {
 
     /// Insert a note commitment (authorized by contract, not user)
     /// This is called by contracts like CLMM after ZK proof verification
-    pub fn authorized_insert(env: Env, leaf: BytesN<32>) -> Result<(u32, BytesN<32>), MerkleTreeError> {
-        // Verify caller is the authorized inserter
-        let caller = env.invoker();
+    pub fn authorized_insert(env: Env, inserter: Address, leaf: BytesN<32>) -> Result<(u32, BytesN<32>), MerkleTreeError> {
+        inserter.require_auth();
         let authorized: Option<Address> = env.storage().instance().get(&DataKey::AuthorizedInserter);
-        
-        if authorized.is_none() || authorized.unwrap() != caller {
+
+        if authorized.is_none() || authorized.unwrap() != inserter {
             return Err(MerkleTreeError::NotAuthorized);
         }
 
@@ -130,12 +127,10 @@ impl MerkleTreeContract {
         env.storage().instance().set(&DataKey::LeafCount, &(leaf_index + 1));
 
         // Update Merkle root
-        let new_root = Self::compute_root_from_index(&env, leaf, leaf_index);
+        let new_root = Self::compute_root_from_leaves(&env, 0, leaf_index + 1);
         env.storage().instance().set(&DataKey::MerkleRoot, &new_root);
 
         Ok((leaf_index, new_root))
-    }
-
     }
 
     /// Batch insert multiple leaves
@@ -160,7 +155,7 @@ impl MerkleTreeContract {
         env.storage().instance().set(&DataKey::LeafCount, &current_count);
         
         // Compute root with all inserted leaves
-        let new_root = Self::compute_root_from_leaves(&env, first_index, current_count);
+        let new_root = Self::compute_root_from_leaves(&env, 0, current_count);
         env.storage().instance().set(&DataKey::MerkleRoot, &new_root);
         
         Ok((first_index, new_root))
@@ -188,7 +183,7 @@ impl MerkleTreeContract {
     /// Verify a Merkle proof (computed off-chain)
     /// Returns true if the proof is valid
     pub fn verify_proof(
-        env: Env,
+        _env: Env,
         leaf: BytesN<32>,
         root: BytesN<32>,
         proof_path: Vec<(BytesN<32>, bool)>,  // (sibling, is_left)
@@ -263,9 +258,10 @@ impl MerkleTreeContract {
             i += 1;
         }
         
-        // Hash pairs until single root
+        // Hash pairs through every tree level, padding with that level's zero
+        // subtree root. A single leaf still needs to be lifted to depth 20.
         let mut level = 0u32;
-        while current_level.len() > 1 {
+        while level < TREE_HEIGHT {
             let mut next_level: Vec<BytesN<32>> = Vec::new(env);
             
             let zero_hash = Self::get_zero_hash(env, level);

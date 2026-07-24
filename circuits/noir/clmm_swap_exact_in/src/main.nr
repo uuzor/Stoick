@@ -10,7 +10,7 @@ fn main(
     merkle_root: pub Field,
     input_nullifier: pub Field,
     output_commitment: pub Field,
-    _pool_state_old: pub Field,
+    pool_state_old: pub Field,
     _pool_state_new: pub Field,
     min_output_commitment: Field,
     pool_id: Field,
@@ -104,6 +104,18 @@ fn main(
     // ========================================================================
     
     // Verify final price matches
+    let computed_pool_state_old = clmm::pool_state_commitment(
+        pool_id,
+        pool_asset_0,
+        pool_asset_1,
+        pool_sqrt_price_old,
+        pool_liquidity_old,
+        0,
+        0,
+        pool_sequence,
+    );
+    assert(computed_pool_state_old == pool_state_old, "pool state old mismatch");
+
     assert(pool_sqrt_price_new == pool_sqrt_price_old + 1, "pool price mismatch");
     assert(pool_liquidity_new == pool_liquidity_old, "pool liquidity mismatch");
     
@@ -136,6 +148,7 @@ fn test_swap_exact_in_simple() {
     let sqrt_price: Field = 281474976710656; // 2^48
     let liquidity: Field = 1000000;
     let fee: Field = 30; // 0.3%
+    let pool_state_old = clmm::pool_state_commitment(pool_id, 0, 1, sqrt_price, liquidity, 0, 0, 1);
     
     // Swap
     let swap_amount: Field = 50000;
@@ -148,7 +161,7 @@ fn test_swap_exact_in_simple() {
     
     main(
         root, in_nullifier, out_commitment,
-        0, 0,
+        pool_state_old, 0,
         output_amount, // min output
         pool_id, 1, 1,
         
@@ -183,10 +196,11 @@ fn test_swap_wrong_output() {
     let out_asset: Field = 1;
     let output_amount: Field = 50000;
     let wrong_out_commitment = w::note_commitment(out_asset, output_amount - 1, owner_key, 222);
+    let pool_state_old = clmm::pool_state_commitment(1, 0, 1, 281474976710656, 1000000, 0, 0, 1);
     
     main(
         root, in_nullifier, wrong_out_commitment,
-        0, 0, output_amount, 1, 1, 1,
+        pool_state_old, 0, output_amount, 1, 1, 1,
         
         in_asset, in_amount, owner_key, sk, 111, path, indices,
         

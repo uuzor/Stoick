@@ -6,7 +6,7 @@
 //! themselves from the app — no admin, no trustlines. This is a testnet mock; do not use
 //! on mainnet.
 
-use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, MuxedAddress, String};
+use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String};
 
 #[contracttype]
 #[derive(Clone)]
@@ -53,19 +53,18 @@ impl FaucetToken {
 
     // --- SEP-41 subset used by the pool ---
 
-    pub fn transfer(env: Env, from: Address, to: MuxedAddress, amount: i128) {
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
         from.require_auth();
         if amount <= 0 {
             panic!("amount must be positive");
         }
-        let to_addr = to.address();
         let from_bal = Self::read_balance(&env, &from);
         if from_bal < amount {
             panic!("insufficient balance");
         }
         Self::write_balance(&env, &from, from_bal - amount);
-        let to_bal = Self::read_balance(&env, &to_addr);
-        Self::write_balance(&env, &to_addr, to_bal + amount);
+        let to_bal = Self::read_balance(&env, &to);
+        Self::write_balance(&env, &to, to_bal + amount);
     }
 
     pub fn balance(env: Env, id: Address) -> i128 {

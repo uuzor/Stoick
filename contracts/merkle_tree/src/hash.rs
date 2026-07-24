@@ -1,36 +1,32 @@
-//! Hash functions for Merkle tree
+//! Hash functions for Merkle tree.
 //!
-//! Uses SHA256 for hashing in the Merkle tree.
-//! In production, this would use Poseidon for better ZK-friendly properties.
+//! This must match the Noir `wraith_lib::hash2` and SDK `hash2` exactly:
+//! Poseidon2 over BN254 field elements, with each 32-byte node interpreted as
+//! a big-endian field element reduced modulo the BN254 scalar field.
 
-use soroban_sdk::{BytesN, Bytes, Env};
+use soroban_poseidon::{poseidon2_hash, Field};
+use soroban_sdk::{crypto::BnScalar, Bytes, BytesN, Env, U256, Vec};
 
-/// Compute hash of two 32-byte values using SHA256(a || b)
+/// Compute hash of two 32-byte field values using Poseidon2(left, right).
 pub fn hash_pair(left: &BytesN<32>, right: &BytesN<32>) -> BytesN<32> {
     let env = left.env();
-    let mut input = Bytes::new(env);
-    input.append(&mut left.clone().into());
-    input.append(&mut right.clone().into());
-    
-    // Use SHA256
-    let hash_result = env.crypto().sha256(&input);
-    let output: [u8; 32] = hash_result.try_into().unwrap();
-    BytesN::<32>::from_array(env, &output)
+    let modulus = <BnScalar as Field>::modulus(env);
+    let mut inputs = Vec::new(env);
+    inputs.push_back(field_from_bytes(env, left, &modulus));
+    inputs.push_back(field_from_bytes(env, right, &modulus));
+
+    let out = poseidon2_hash::<4, BnScalar>(env, &inputs);
+    let mut out_arr = [0u8; 32];
+    out.to_be_bytes().copy_into_slice(&mut out_arr);
+    BytesN::<32>::from_array(env, &out_arr)
 }
 
-/// Compute hash of a single value (used for leaves)
-pub fn hash_leaf(value: &BytesN<32>) -> BytesN<32> {
-    let env = value.env();
-    let mut input = Bytes::new(env);
-    input.append(&mut value.clone().into());
-    
-    let hash_result = env.crypto().sha256(&input);
-    let output: [u8; 32] = hash_result.try_into().unwrap();
-    BytesN::<32>::from_array(env, &output)
-}
-
-/// Compute zero hash (hash of 32 zero bytes)
+/// Level-0 empty leaf is the zero field. Higher levels are hash_pair(zero, zero).
 pub fn zero_hash(env: &Env) -> BytesN<32> {
-    let input = BytesN::<32>::from_array(env, &[0u8; 32]);
-    hash_leaf(&input)
+    BytesN::<32>::from_array(env, &[0u8; 32])
+}
+
+fn field_from_bytes(env: &Env, value: &BytesN<32>, modulus: &U256) -> U256 {
+    let bytes = Bytes::from_array(env, &value.to_array());
+    U256::from_be_bytes(env, &bytes).rem_euclid(modulus)
 }

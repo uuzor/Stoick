@@ -16,10 +16,10 @@ fn main(
     position_nullifier: pub Field,
     old_position_commitment: pub Field,
     new_position_commitment: pub Field,
-    _pool_state_old: pub Field,
+    pool_state_old: pub Field,
     _pool_state_new: pub Field,
-    output_commitment_0: Field,
-    output_commitment_1: Field,
+    output_commitment_0: pub Field,
+    output_commitment_1: pub Field,
     
     // ---- private inputs: position ----
     pool_id: Field,
@@ -35,6 +35,8 @@ fn main(
     position_blinding: Field,
     owner_spending_key: Field,
     owner_owner_key: Field,
+    position_merkle_path: [Field; w::TREE_DEPTH],
+    position_merkle_indices: [Field; w::TREE_DEPTH],
     
     // ---- private inputs: pool state ----
     _pool_asset_0: Field,
@@ -63,6 +65,13 @@ fn main(
     
     let derived_nullifier = clmm::position_nullifier(old_position_commitment, owner_spending_key);
     assert(derived_nullifier == position_nullifier, "position nullifier mismatch");
+
+    let computed_position_root = w::compute_merkle_root(
+        old_position_commitment,
+        position_merkle_path,
+        position_merkle_indices,
+    );
+    assert(computed_position_root == _merkle_root, "position merkle root mismatch");
     
     // Verify owner key matches
     assert(owner_owner_key == w::owner_key(owner_spending_key), "owner key mismatch");
@@ -152,6 +161,18 @@ fn main(
     // ========================================================================
     
     // Pool sequence incremented
+    let computed_pool_state_old = clmm::pool_state_commitment(
+        pool_id,
+        _pool_asset_0,
+        _pool_asset_1,
+        _pool_sqrt_price,
+        _pool_liquidity,
+        pool_fee_growth_global_0,
+        pool_fee_growth_global_1,
+        pool_sequence,
+    );
+    assert(computed_pool_state_old == pool_state_old, "pool state old mismatch");
+
     clmm::verify_sequence_increment(pool_sequence, pool_sequence + 1);
     
     // Use total amounts to avoid unused warnings (use u128 comparison)
@@ -179,23 +200,26 @@ fn test_burn_full_position() {
         0, 0, 0, 0, owner_key, 1, 12345
     );
     let pos_nullifier = clmm::position_nullifier(old_position, sk);
+    let position_root = w::compute_merkle_root(old_position, [0; 20], [0; 20]);
     
     // For full burn with zero fee growth, output amounts must be 0
     let out_0 = w::note_commitment(0, 0, owner_key, 111);
     let out_1 = w::note_commitment(1, 0, owner_key, 222);
+    let pool_state_old = clmm::pool_state_commitment(pool_id, 0, 1, 281474976710656, 1000000, 0, 0, 1);
     
     main(
-        0,
+        position_root,
         pos_nullifier,
         old_position,
         0, // Full burn: no new position
-        0, 0,
+        pool_state_old, 0,
         out_0, out_1,
         
         pool_id, tick_lower, tick_upper,
         liquidity, liquidity,
         0, 0, 0, 0,
         1, 12345, sk, owner_key,
+        [0; 20], [0; 20],
         
         0, 1, 281474976710656, current_tick, 1000000,
         0, 0, 1, 100,
@@ -218,13 +242,15 @@ fn test_burn_too_much() {
         0, 0, 0, 0, owner_key, 1, 12345
     );
     let pos_nullifier = clmm::position_nullifier(old_position, sk);
+    let position_root = w::compute_merkle_root(old_position, [0; 20], [0; 20]);
+    let pool_state_old = clmm::pool_state_commitment(1, 0, 1, 281474976710656, 1000000, 0, 0, 1);
     
     main(
-        0,
+        position_root,
         pos_nullifier,
         old_position,
         0,
-        0, 0,
+        pool_state_old, 0,
         w::note_commitment(0, 0, owner_key, 111),
         w::note_commitment(1, 0, owner_key, 222),
         
@@ -232,6 +258,7 @@ fn test_burn_too_much() {
         old_liquidity, liquidity_to_burn,
         0, 0, 0, 0,
         1, 12345, sk, owner_key,
+        [0; 20], [0; 20],
         
         0, 1, 281474976710656, 1500, 1000000,
         0, 0, 1, 100,

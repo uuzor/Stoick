@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# Build, test, prove, and export VKs for all five Wraith circuits.
+# Build, test, prove, and export VKs for Wraith pool and CLMM circuits.
 #
 # Usage (from anywhere):
 #   source <repo>/env.sh        # put pinned nargo 1.0.0-beta.9 + bb 0.87.0 on PATH
 #   <repo>/circuits/noir/build_all.sh
 #
-# For each circuit this:
+# For pool circuits this:
 #   1. nargo test            -- runs the in-circuit unit tests
 #   2. nargo compile         -- produces target/<circuit>.json
 #   3. nargo execute witness -- solves the witness from Prover.toml
@@ -14,12 +14,28 @@
 #   5. bb write_vk           -- exports the verification key
 #   6. verifies proof == 14592 bytes and vk == 1760 bytes (SHARED sec 6/8)
 #   7. copies vk + a sample proof + public_inputs into circuits/artifacts/<circuit>/
+# For CLMM circuits this runs tests, compiles, writes VKs, and copies VK artifacts. The checked-in
+# CLMM Prover.toml fixtures are not valid sample witnesses for all operation circuits.
 #
 # Exits non-zero on the first failure.
 
 set -euo pipefail
 
-CIRCUITS=(withdraw transfer place_order match_orders cancel_order)
+PROOF_CIRCUITS=(
+  withdraw
+  transfer
+  place_order
+  match_orders
+  cancel_order
+)
+
+VK_ONLY_CIRCUITS=(
+  clmm_mint
+  clmm_burn
+  clmm_collect
+  clmm_swap_exact_in
+  clmm_swap_exact_out
+)
 
 # Resolve directories relative to this script.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # .../circuits/noir
@@ -38,7 +54,7 @@ echo
 
 filesize() { wc -c < "$1" | tr -d ' '; }
 
-for c in "${CIRCUITS[@]}"; do
+for c in "${PROOF_CIRCUITS[@]}"; do
   echo "=============================================================="
   echo "Circuit: ${c}"
   echo "=============================================================="
@@ -90,4 +106,38 @@ for c in "${CIRCUITS[@]}"; do
   echo
 done
 
-echo "All circuits built. Proof=${EXPECTED_PROOF_BYTES} B, VK=${EXPECTED_VK_BYTES} B confirmed for each."
+for c in "${VK_ONLY_CIRCUITS[@]}"; do
+  echo "=============================================================="
+  echo "Circuit: ${c} (VK only)"
+  echo "=============================================================="
+  pkg="${SCRIPT_DIR}/${c}"
+
+  ( cd "${pkg}"
+
+    echo "[1/3] nargo test"
+    nargo test
+
+    echo "[2/3] nargo compile"
+    nargo compile
+
+    echo "[3/3] bb write_vk"
+    bb write_vk --scheme ultra_honk --oracle_hash keccak \
+      -b "target/${c}.json" -o target \
+      --output_format bytes_and_fields
+  )
+
+  vk_bytes="$(filesize "${pkg}/target/vk")"
+  if [[ "${vk_bytes}" != "${EXPECTED_VK_BYTES}" ]]; then
+    echo "FAIL: ${c} vk is ${vk_bytes} bytes, expected ${EXPECTED_VK_BYTES}"
+    exit 1
+  fi
+  echo "OK: vk=${vk_bytes} B"
+
+  out="${ARTIFACTS_DIR}/${c}"
+  mkdir -p "${out}"
+  cp "${pkg}/target/vk" "${out}/vk"
+  echo "Artifacts -> ${out}/vk"
+  echo
+done
+
+echo "All circuits built. Pool proofs=${EXPECTED_PROOF_BYTES} B and all VKs=${EXPECTED_VK_BYTES} B confirmed."

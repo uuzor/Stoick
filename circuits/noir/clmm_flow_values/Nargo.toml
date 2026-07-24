@@ -1,0 +1,10 @@
+[package]
+name = "clmm_flow_values"
+version = "0.1.0"
+edition = "2024"
+type = "bin"
+authors = [""]
+
+[dependencies]
+wraith_lib = { path = "../wraith_lib" }
+wraith_clmm_lib = { path = "../wraith_clmm_lib" }

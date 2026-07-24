@@ -27,7 +27,7 @@ fn main(
     position_nullifier: pub Field,
     old_position_commitment: pub Field,
     new_position_commitment: pub Field,
-    _pool_state_old: pub Field,
+    pool_state_old: pub Field,
     _pool_state_new: pub Field,
     input_nullifier: pub Field,
     _output_note_commitment: Field,
@@ -175,7 +175,18 @@ fn main(
     // 7. Verify pool state transition
     // ========================================================================
     
-    // In Phase A, pool state is public
+    let computed_pool_state_old = clmm::pool_state_commitment(
+        pool_id,
+        _pool_asset_0,
+        _pool_asset_1,
+        _pool_sqrt_price,
+        _pool_liquidity,
+        _pool_fee_growth_global_0,
+        _pool_fee_growth_global_1,
+        pool_sequence,
+    );
+    assert(computed_pool_state_old == pool_state_old, "pool state old mismatch");
+
     // Verify sequence incremented
     clmm::verify_sequence_increment(pool_sequence, pool_sequence + 1);
     
@@ -224,6 +235,7 @@ fn test_mint_new_position() {
     // Pool state
     let current_tick: Field = 1500;
     let sequence: Field = 1;
+    let pool_state_old = clmm::pool_state_commitment(pool_id, 0, 0, 0, liquidity, 0, 0, sequence);
     
     // Print computed values for Prover.toml
     // These are the hex values needed:
@@ -239,7 +251,7 @@ fn test_mint_new_position() {
     // Call main
     main(
         root, pos_nullifier, 0, new_pos_commitment,
-        0, 0, // pool commitments (public in Phase A)
+        pool_state_old, 0,
         in_nullifier,
         0, // no change
         0, // slippage (ignored for new position)
@@ -297,11 +309,12 @@ fn test_mint_existing_wrong_nullifier() {
     let wrong_nullifier = clmm::position_nullifier(old_pos_commitment, wrong_sk);
     
     let current_tick: Field = 1500;
+    let pool_state_old = clmm::pool_state_commitment(pool_id, 0, 0, 0, liquidity, 0, 0, 1);
     
     // Call main with correct old commitment but wrong nullifier
     main(
         root, wrong_nullifier, old_pos_commitment, new_pos_commitment,
-        0, 0,
+        pool_state_old, 0,
         in_nullifier,
         0, 0,
         
@@ -339,10 +352,11 @@ fn test_mint_self_referencing_nullifier() {
     let pos_nullifier = in_nullifier; // Same as input - should fail
     
     let current_tick: Field = 1500;
+    let pool_state_old = clmm::pool_state_commitment(1, 0, 0, 0, 1000000, 0, 0, 1);
     
     main(
         root, pos_nullifier, 0, new_pos_commitment,
-        0, 0,
+        pool_state_old, 0,
         in_nullifier,
         0, 0,
         

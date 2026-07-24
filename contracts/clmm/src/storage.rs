@@ -3,7 +3,7 @@
 //! Persistent storage management for pools, positions, and ticks.
 
 use crate::types::{DataKey, PoolState, PositionState, TickState};
-use soroban_sdk::Env;
+use soroban_sdk::{Address, Env};
 
 /// Storage manager for CLMM contract
 pub struct Storage<'a> {
@@ -53,16 +53,16 @@ impl<'a> Storage<'a> {
     }
 
     // Position operations
-    pub fn get_position(&self, pool_id: u32, tick_lower: i64, tick_upper: i64) -> Option<PositionState> {
-        self.env.storage().get(&DataKey::Position(pool_id, tick_lower, tick_upper))
+    pub fn get_position(&self, owner: Address, pool_id: u32, tick_lower: i64, tick_upper: i64) -> Option<PositionState> {
+        self.env.storage().get(&DataKey::Position(owner, pool_id, tick_lower, tick_upper))
     }
 
-    pub fn set_position(&self, pool_id: u32, tick_lower: i64, tick_upper: i64, position: &PositionState) {
-        self.env.storage().set(&DataKey::Position(pool_id, tick_lower, tick_upper), position);
+    pub fn set_position(&self, owner: Address, pool_id: u32, tick_lower: i64, tick_upper: i64, position: &PositionState) {
+        self.env.storage().set(&DataKey::Position(owner, pool_id, tick_lower, tick_upper), position);
     }
 
-    pub fn remove_position(&self, pool_id: u32, tick_lower: i64, tick_upper: i64) {
-        self.env.storage().remove::<_, PositionState>(&DataKey::Position(pool_id, tick_lower, tick_upper));
+    pub fn remove_position(&self, owner: Address, pool_id: u32, tick_lower: i64, tick_upper: i64) {
+        self.env.storage().remove::<_, PositionState>(&DataKey::Position(owner, pool_id, tick_lower, tick_upper));
     }
 
     // Tick operations

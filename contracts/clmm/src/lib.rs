@@ -12,91 +12,23 @@ mod types;
 #[contract]
 pub struct Clmm;
 
-use events::{MintEvent, PoolCreatedEvent, ProtocolFeeClaimEvent};
+use events::{MintEvent, PoolCreatedEvent, PrivateDepositEvent, ProtocolFeeClaimEvent};
 use math::validate_tick_range;
+use soroban_poseidon::{poseidon2_hash, Field};
 use soroban_sdk::{
-    contract, contractimpl, contracttype, contracterror, Address, Bytes, BytesN, Env,
+    contract, contracterror, contractimpl, contracttype, crypto::BnScalar, token, xdr::ToXdr,
+    Address, Bytes, BytesN, Env, IntoVal, InvokeError, Symbol, U256, Val, Vec,
 };
 
-// Verifier client for cross-contract calls to UltraHonk verifier
-mod verifier_client {
-    use soroban_sdk::{contracterror, Address, Bytes, Env};
-    
-    #[contracterror]
-    #[repr(u32)]
-    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-    pub enum VerifierError {
-        VerificationFailed = 1,
-        InvalidProof = 2,
-        VkNotSet = 3,
-    }
-    
-    // Client for calling UltraHonkVerifierContract
-    // The verifier has a single function: verify_proof(public_inputs, proof_bytes)
-    pub struct UltraHonkVerifier;
-    
-    impl UltraHonkVerifier {
-        /// Call the verifier contract to verify a proof
-        pub fn verify(
-            env: &Env,
-            verifier_addr: &Address,
-            public_inputs: &Bytes,
-            proof_bytes: &Bytes,
-        ) -> Result<(), VerifierError> {
-            // Use the verifier contract's verify_proof function
-            // The verifier contract is: UltraHonkVerifierContract
-            // Function: verify_proof(public_inputs: Bytes, proof_bytes: Bytes) -> Result<(), Error>
-            
-            // Create a client-like call using the soroban_sdk
-            // In production, this would use a proper client generated from WASM
-            
-            // For now, we'll use require_auth with a check that the verifier accepted the call
-            // The actual verification happens on-chain at the verifier contract
-            
-            // Note: In Soroban, cross-contract calls require the contract to have
-            // a callable entry point. The verifier contract has verify_proof.
-            // We'll need to use the call function or generate a proper client.
-            
-            // Placeholder - actual implementation needs generated client
-            Ok(())
-        }
-    }
-}
-
-// Client for UltraHonkVerifierContract
-// This is a simple wrapper for making cross-contract calls
-mod ultra_hoink_verifier_client {
-    use soroban_sdk::{Address, Bytes, Env, IntoVal};
-    
-    /// Client for calling the UltraHonkVerifierContract
-    pub struct VerifierClient {
-        env: Env,
-        addr: Address,
-    }
-    
-    impl VerifierClient {
-        pub fn new(env: Env, addr: Address) -> Self {
-            Self { env, addr }
-        }
-        
-        /// Call verify_proof on the verifier contract
-        /// This will panic if verification fails
-        pub fn verify_proof(&self, public_inputs: &Bytes, proof: &Bytes) {
-            // Use env.invoke_contract to make the cross-contract call
-            // The verifier contract has: verify_proof(public_inputs: Bytes, proof_bytes: Bytes) -> Result<(), Error>
-            self.env.invoke_contract::<soroban_sdk::Error>(
-                &self.addr,
-                &soroban_sdk::Symbol::new(&self.env, "verify_proof"),
-                (public_inputs.clone(), proof.clone()).into_val(&self.env),
-            );
-        }
-    }
-}
+const PROOF_BYTES: u32 = 456 * 32;
 
 // Client for Merkle Tree contract
 // Used to insert note commitments after ZK proof verification
 mod merkle_tree_client {
-    use soroban_sdk::{Address, BytesN, Env, IntoVal};
+    use soroban_sdk::{
+        auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
+        Address, BytesN, Env, IntoVal, InvokeError, Symbol, Val, Vec,
+    };
     
     /// Client for calling the Merkle Tree contract
     pub struct MerkleTreeClient {
@@ -113,12 +45,40 @@ mod merkle_tree_client {
         /// Returns (leaf_index, new_root) on success
         /// Uses authorized_insert for contract-to-contract calls
         pub fn insert(&self, commitment: &BytesN<32>) -> (u32, BytesN<32>) {
-            // Use authorized_insert - the Merkle tree must have CLMM set as authorized inserter
+            let inserter = self.env.current_contract_address();
+            let fn_name = Symbol::new(&self.env, "authorized_insert");
+            let mut args: Vec<Val> = Vec::new(&self.env);
+            args.push_back(inserter.clone().into_val(&self.env));
+            args.push_back(commitment.clone().into_val(&self.env));
+
+            self.env.authorize_as_current_contract(Vec::from_array(
+                &self.env,
+                [InvokerContractAuthEntry::Contract(SubContractInvocation {
+                    context: ContractContext {
+                        contract: self.addr.clone(),
+                        fn_name: fn_name.clone(),
+                        args: args.clone(),
+                    },
+                    sub_invocations: Vec::new(&self.env),
+                })],
+            ));
+
             self.env.invoke_contract::<(u32, BytesN<32>)>(
                 &self.addr,
-                &soroban_sdk::Symbol::new(&self.env, "authorized_insert"),
-                (commitment.clone(),).into_val(&self.env),
+                &fn_name,
+                (inserter, commitment.clone()).into_val(&self.env),
             )
+        }
+
+        pub fn get_root(&self) -> Option<BytesN<32>> {
+            self.env
+                .try_invoke_contract::<BytesN<32>, InvokeError>(
+                    &self.addr,
+                    &Symbol::new(&self.env, "get_root"),
+                    Vec::new(&self.env),
+                )
+                .ok()?
+                .ok()
         }
     }
 }
@@ -130,7 +90,7 @@ pub enum DataKey {
     Admin,
     LastPoolId,
     Pool(u32),
-    Position(u32, i64, i64),
+    Position(Address, u32, i64, i64),
     Tick(u32, i64),
     PoolSequence(u32),
     MintVf,
@@ -141,11 +101,15 @@ pub enum DataKey {
     ProtocolFeeRecipient,
     ProtocolFee,
     /// Note commitment - stored after successful ZK verification
-    NoteCommitment(u64),
+    NoteCommitment(u64, u32),
+    /// Spent nullifier - prevents replay of shielded spends
+    Nullifier(BytesN<32>),
     /// Last operation ID for tracking
     LastOpId(u32),
+    /// Last private deposit ID for tracking funded balance notes
+    LastDepositId,
     /// Merkle leaf index and new root - stored after successful insertion
-    MerkleLeafIndex(u64),
+    MerkleLeafIndex(u64, u32),
 }
 
 /// Pool state
@@ -153,8 +117,8 @@ pub enum DataKey {
 #[derive(Clone)]
 pub struct PoolState {
     pub pool_id: u32,
-    pub asset_0: u32,
-    pub asset_1: u32,
+    pub asset_0: Address,
+    pub asset_1: Address,
     pub sqrt_price: u128,
     pub liquidity: u128,
     pub current_tick: i64,
@@ -204,6 +168,7 @@ pub enum ClmmError {
     ProofVerificationFailed = 15,
     PoolLocked = 16,
     InvalidProtocolFee = 17,
+    UnknownRoot = 18,
 }
 
 #[contractimpl]
@@ -225,12 +190,13 @@ impl Clmm {
         s.set(&DataKey::CollectVf, &collect_vf);
         s.set(&DataKey::MerkleTree, &merkle_tree);
         s.set(&DataKey::ProtocolFee, &0u32);
+        s.set(&DataKey::ProtocolFeeRecipient, &admin);
     }
 
     pub fn create_pool(
         env: Env,
-        _asset_0: Address,
-        _asset_1: Address,
+        asset_0: Address,
+        asset_1: Address,
         fee: u32,
         tick_spacing: u32,
         initial_sqrt_price: u128,
@@ -244,6 +210,12 @@ impl Clmm {
         if tick_spacing == 0 || tick_spacing > 10000 {
             return Err(ClmmError::InvalidTickSpacing);
         }
+        if asset_0 == asset_1 {
+            return Err(ClmmError::InvalidAmount);
+        }
+        if initial_sqrt_price == 0 {
+            return Err(ClmmError::InvalidSqrtPrice);
+        }
 
         let s = env.storage().instance();
         let pool_id: u32 = s.get(&DataKey::LastPoolId).unwrap_or(0) + 1;
@@ -251,8 +223,8 @@ impl Clmm {
 
         let pool = PoolState {
             pool_id,
-            asset_0: 0,
-            asset_1: 1,
+            asset_0: asset_0.clone(),
+            asset_1: asset_1.clone(),
             sqrt_price: initial_sqrt_price,
             liquidity: 0,
             current_tick: 0,
@@ -269,14 +241,61 @@ impl Clmm {
 
         PoolCreatedEvent {
             pool_id,
-            asset_0: 0,
-            asset_1: 1,
+            asset_0,
+            asset_1,
             fee,
             tick_spacing,
         }
         .publish(&env);
 
         Ok(pool_id)
+    }
+
+    /// Fund a private balance note for later shielded CLMM operations.
+    ///
+    /// The note commitment is generated client-side from
+    /// `(asset_address_as_field, amount, owner_key, blinding)`. This function
+    /// only verifies public token custody: it transfers real tokens into CLMM
+    /// escrow and inserts the commitment into the shared Merkle tree.
+    pub fn deposit_private(
+        env: Env,
+        asset: Address,
+        from: Address,
+        amount: u64,
+        commitment: BytesN<32>,
+    ) -> Result<(u64, u32, BytesN<32>), ClmmError> {
+        if amount == 0 {
+            return Err(ClmmError::InvalidAmount);
+        }
+        from.require_auth();
+
+        Self::transfer_to_pool(&env, &asset, &from, amount);
+
+        let s = env.storage().instance();
+        let deposit_id: u64 = s.get(&DataKey::LastDepositId).unwrap_or(0) + 1;
+        s.set(&DataKey::LastDepositId, &deposit_id);
+
+        let merkle_tree_addr: Address = s
+            .get(&DataKey::MerkleTree)
+            .ok_or(ClmmError::UnknownRoot)?;
+        let merkle_client = merkle_tree_client::MerkleTreeClient::new(env.clone(), merkle_tree_addr);
+        let (leaf_index, root) = merkle_client.insert(&commitment);
+
+        s.set(&DataKey::NoteCommitment(deposit_id, 0), &commitment);
+        s.set(&DataKey::MerkleLeafIndex(deposit_id, 0), &(leaf_index, root.clone()));
+
+        PrivateDepositEvent {
+            deposit_id,
+            asset,
+            from,
+            amount,
+            commitment: commitment.clone(),
+            leaf_index,
+            root: root.clone(),
+        }
+        .publish(&env);
+
+        Ok((deposit_id, leaf_index, root))
     }
 
     /// Mint liquidity with ZK proof verification
@@ -301,28 +320,35 @@ impl Clmm {
         // Call verifier.verify_proof(public_inputs, proof)
         Self::call_verifier(&env, &verifier_addr, &public_inputs, &proof)?;
         
-        // Parse public inputs to extract note commitment
-        // Format: [merkle_root, nullifier, commitment, ...]
-        let note_commitment = parse_commitment_from_inputs(&public_inputs)?;
+        let parsed = parse_mint_public_inputs(&public_inputs)?;
+        let mut pool = Self::require_pool(&env, pool_id)?;
+        Self::require_pool_state(&env, &pool, &parsed.pool_state_old)?;
+        Self::require_current_merkle_root(&env, &parsed.merkle_root)?;
+        Self::spend_nullifier(&env, &parsed.input_nullifier)?;
+        if !is_zero_bytes(&parsed.position_nullifier) {
+            Self::spend_nullifier(&env, &parsed.position_nullifier)?;
+        }
         
         // Update pool sequence FIRST to get op_id
-        let seq: u64 = s.get(&DataKey::PoolSequence(pool_id)).unwrap_or(0) + 1;
+        let seq: u64 = pool.sequence + 1;
+        pool.sequence = seq;
+        s.set(&DataKey::Pool(pool_id), &pool);
         s.set(&DataKey::PoolSequence(pool_id), &(seq));
         let op_id = seq;
         
         // Get Merkle tree address and insert commitment
         if let Some(merkle_tree_addr) = s.get::<_, Address>(&DataKey::MerkleTree) {
             let merkle_client = merkle_tree_client::MerkleTreeClient::new(env.clone(), merkle_tree_addr);
-            let (leaf_index, new_root) = merkle_client.insert(&note_commitment);
+            let (leaf_index, new_root) = merkle_client.insert(&parsed.new_position_commitment);
             // Store the leaf index and new root for verification
-            s.set(&DataKey::MerkleLeafIndex(op_id), &(leaf_index, new_root));
+            s.set(&DataKey::MerkleLeafIndex(op_id, 0), &(leaf_index, new_root));
         }
         
         // Store operation tracking
         s.set(&DataKey::LastOpId(pool_id), &op_id);
-        s.set(&DataKey::NoteCommitment(op_id), &note_commitment);
+        s.set(&DataKey::NoteCommitment(op_id, 0), &parsed.new_position_commitment);
         
-        Ok((op_id, note_commitment))
+        Ok((op_id, parsed.new_position_commitment))
     }
 
     /// Burn liquidity with ZK proof verification
@@ -336,7 +362,7 @@ impl Clmm {
         proof: Bytes,
         public_inputs: Bytes,
         pool_id: u32,
-    ) -> Result<(u64, BytesN<32>), ClmmError> {
+    ) -> Result<(u64, BytesN<32>, BytesN<32>, BytesN<32>), ClmmError> {
         let s = env.storage().instance();
         
         // Get verifier contract address
@@ -345,18 +371,34 @@ impl Clmm {
         // Verify the ZK proof
         Self::call_verifier(&env, &verifier_addr, &public_inputs, &proof)?;
         
-        // Parse public inputs to extract nullifier
-        let nullifier = parse_nullifier_from_inputs(&public_inputs)?;
+        let parsed = parse_burn_public_inputs(&public_inputs)?;
+        let mut pool = Self::require_pool(&env, pool_id)?;
+        Self::require_pool_state(&env, &pool, &parsed.pool_state_old)?;
+        Self::require_current_merkle_root(&env, &parsed.merkle_root)?;
+        Self::spend_nullifier(&env, &parsed.position_nullifier)?;
         
         // Update pool sequence
-        let seq: u64 = s.get(&DataKey::PoolSequence(pool_id)).unwrap_or(0) + 1;
+        let seq: u64 = pool.sequence + 1;
+        pool.sequence = seq;
+        s.set(&DataKey::Pool(pool_id), &pool);
         s.set(&DataKey::PoolSequence(pool_id), &(seq));
         
         // Store operation tracking
         let op_id = seq;
+
+        if let Some(merkle_tree_addr) = s.get::<_, Address>(&DataKey::MerkleTree) {
+            let merkle_client = merkle_tree_client::MerkleTreeClient::new(env.clone(), merkle_tree_addr);
+            let (leaf_index_0, new_root_0) = merkle_client.insert(&parsed.output_commitment_0);
+            s.set(&DataKey::MerkleLeafIndex(op_id, 0), &(leaf_index_0, new_root_0));
+            let (leaf_index_1, new_root_1) = merkle_client.insert(&parsed.output_commitment_1);
+            s.set(&DataKey::MerkleLeafIndex(op_id, 1), &(leaf_index_1, new_root_1));
+        }
+
         s.set(&DataKey::LastOpId(pool_id), &op_id);
+        s.set(&DataKey::NoteCommitment(op_id, 0), &parsed.output_commitment_0);
+        s.set(&DataKey::NoteCommitment(op_id, 1), &parsed.output_commitment_1);
         
-        Ok((op_id, nullifier))
+        Ok((op_id, parsed.position_nullifier, parsed.output_commitment_0, parsed.output_commitment_1))
     }
 
     /// Swap with ZK proof verification
@@ -379,27 +421,31 @@ impl Clmm {
         // Verify the ZK proof
         Self::call_verifier(&env, &verifier_addr, &public_inputs, &proof)?;
         
-        // Parse public inputs to get swap details
-        let output_amount = parse_swap_output_from_inputs(&public_inputs)?;
-        let output_commitment = parse_commitment_from_inputs(&public_inputs)?;
+        let parsed = parse_swap_public_inputs(&public_inputs)?;
+        let mut pool = Self::require_pool(&env, pool_id)?;
+        Self::require_pool_state(&env, &pool, &parsed.pool_state_old)?;
+        Self::require_current_merkle_root(&env, &parsed.merkle_root)?;
+        Self::spend_nullifier(&env, &parsed.input_nullifier)?;
         
         // Update pool sequence FIRST
-        let seq: u64 = s.get(&DataKey::PoolSequence(pool_id)).unwrap_or(0) + 1;
+        let seq: u64 = pool.sequence + 1;
+        pool.sequence = seq;
+        s.set(&DataKey::Pool(pool_id), &pool);
         s.set(&DataKey::PoolSequence(pool_id), &seq);
         let op_id = seq;
         
         // Get Merkle tree address and insert output commitment
         if let Some(merkle_tree_addr) = s.get::<_, Address>(&DataKey::MerkleTree) {
             let merkle_client = merkle_tree_client::MerkleTreeClient::new(env.clone(), merkle_tree_addr);
-            let (leaf_index, new_root) = merkle_client.insert(&output_commitment);
-            s.set(&DataKey::MerkleLeafIndex(op_id), &(leaf_index, new_root));
+            let (leaf_index, new_root) = merkle_client.insert(&parsed.output_commitment);
+            s.set(&DataKey::MerkleLeafIndex(op_id, 0), &(leaf_index, new_root));
         }
         
         // Store operation tracking
         s.set(&DataKey::LastOpId(pool_id), &op_id);
-        s.set(&DataKey::NoteCommitment(op_id), &output_commitment);
+        s.set(&DataKey::NoteCommitment(op_id, 0), &parsed.output_commitment);
         
-        Ok((output_amount, output_commitment))
+        Ok((0, parsed.output_commitment))
     }
 
     /// Collect fees with ZK proof verification
@@ -413,7 +459,7 @@ impl Clmm {
         proof: Bytes,
         public_inputs: Bytes,
         pool_id: u32,
-    ) -> Result<(u64, u64, BytesN<32>), ClmmError> {
+    ) -> Result<(u64, u64, BytesN<32>, BytesN<32>), ClmmError> {
         let s = env.storage().instance();
         
         // Get verifier contract address
@@ -422,27 +468,40 @@ impl Clmm {
         // Verify the ZK proof
         Self::call_verifier(&env, &verifier_addr, &public_inputs, &proof)?;
         
-        // Parse public inputs
-        let (amount_0, amount_1) = parse_collect_amounts_from_inputs(&public_inputs)?;
-        let output_commitment = parse_commitment_from_inputs(&public_inputs)?;
+        let parsed = parse_collect_public_inputs(&public_inputs)?;
+        let mut pool = Self::require_pool(&env, pool_id)?;
+        Self::require_pool_state(&env, &pool, &parsed.pool_state_old)?;
+        Self::require_current_merkle_root(&env, &parsed.merkle_root)?;
+        Self::spend_nullifier(&env, &parsed.position_nullifier)?;
+        if is_zero_bytes(&parsed.new_position_commitment) {
+            return Err(ClmmError::InvalidSequence);
+        }
         
         // Update pool sequence FIRST
-        let seq: u64 = s.get(&DataKey::PoolSequence(pool_id)).unwrap_or(0) + 1;
+        let seq: u64 = pool.sequence + 1;
+        pool.sequence = seq;
+        s.set(&DataKey::Pool(pool_id), &pool);
         s.set(&DataKey::PoolSequence(pool_id), &(seq));
         let op_id = seq;
         
         // Get Merkle tree address and insert output commitment
         if let Some(merkle_tree_addr) = s.get::<_, Address>(&DataKey::MerkleTree) {
             let merkle_client = merkle_tree_client::MerkleTreeClient::new(env.clone(), merkle_tree_addr);
-            let (leaf_index, new_root) = merkle_client.insert(&output_commitment);
-            s.set(&DataKey::MerkleLeafIndex(op_id), &(leaf_index, new_root));
+            let (position_leaf_index, position_root) = merkle_client.insert(&parsed.new_position_commitment);
+            s.set(&DataKey::MerkleLeafIndex(op_id, 0), &(position_leaf_index, position_root));
+            let (leaf_index_0, new_root_0) = merkle_client.insert(&parsed.output_commitment_0);
+            s.set(&DataKey::MerkleLeafIndex(op_id, 1), &(leaf_index_0, new_root_0));
+            let (leaf_index_1, new_root_1) = merkle_client.insert(&parsed.output_commitment_1);
+            s.set(&DataKey::MerkleLeafIndex(op_id, 2), &(leaf_index_1, new_root_1));
         }
         
         // Store operation tracking
         s.set(&DataKey::LastOpId(pool_id), &op_id);
-        s.set(&DataKey::NoteCommitment(op_id), &output_commitment);
+        s.set(&DataKey::NoteCommitment(op_id, 0), &parsed.new_position_commitment);
+        s.set(&DataKey::NoteCommitment(op_id, 1), &parsed.output_commitment_0);
+        s.set(&DataKey::NoteCommitment(op_id, 2), &parsed.output_commitment_1);
         
-        Ok((amount_0, amount_1, output_commitment))
+        Ok((0, 0, parsed.output_commitment_0, parsed.output_commitment_1))
     }
     
     /// Call the UltraHonk verifier contract to verify a proof
@@ -453,15 +512,134 @@ impl Clmm {
         public_inputs: &Bytes,
         proof: &Bytes,
     ) -> Result<(), ClmmError> {
-        // Call the verifier's verify_proof function
-        // The verifier contract exposes: verify_proof(public_inputs, proof_bytes) -> Result<(), Error>
-        
-        // Use the UltraHonk verifier client
-        // The invoke_contract will panic if verification fails, which is what we want
-        let client = ultra_hoink_verifier_client::VerifierClient::new(env.clone(), verifier_addr.clone());
-        client.verify_proof(public_inputs, proof);
-        
+        if proof.len() != PROOF_BYTES {
+            return Err(ClmmError::ProofVerificationFailed);
+        }
+
+        let mut args: Vec<Val> = Vec::new(env);
+        args.push_back(public_inputs.into_val(env));
+        args.push_back(proof.into_val(env));
+
+        env.try_invoke_contract::<(), InvokeError>(
+            verifier_addr,
+            &Symbol::new(env, "verify_proof"),
+            args,
+        )
+        .map_err(|_| ClmmError::ProofVerificationFailed)?
+        .map_err(|_| ClmmError::ProofVerificationFailed)
+    }
+
+    fn spend_nullifier(env: &Env, nullifier: &BytesN<32>) -> Result<(), ClmmError> {
+        if is_zero_bytes(nullifier) {
+            return Err(ClmmError::InvalidSequence);
+        }
+        let s = env.storage().instance();
+        let key = DataKey::Nullifier(nullifier.clone());
+        if s.has(&key) {
+            return Err(ClmmError::InvalidSequence);
+        }
+        s.set(&key, &true);
         Ok(())
+    }
+
+    fn require_pool(env: &Env, pool_id: u32) -> Result<PoolState, ClmmError> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Pool(pool_id))
+            .ok_or(ClmmError::PoolNotFound)
+    }
+
+    fn require_admin(env: &Env, admin: &Address) -> Result<(), ClmmError> {
+        admin.require_auth();
+        let configured: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(ClmmError::Unauthorized)?;
+        if configured != *admin {
+            return Err(ClmmError::Unauthorized);
+        }
+        Ok(())
+    }
+
+    fn require_current_merkle_root(env: &Env, root: &BytesN<32>) -> Result<(), ClmmError> {
+        let merkle_tree_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::MerkleTree)
+            .ok_or(ClmmError::UnknownRoot)?;
+        let merkle_client = merkle_tree_client::MerkleTreeClient::new(env.clone(), merkle_tree_addr);
+        let current_root = merkle_client.get_root().ok_or(ClmmError::UnknownRoot)?;
+        if current_root != *root {
+            return Err(ClmmError::UnknownRoot);
+        }
+        Ok(())
+    }
+
+    fn require_pool_state(env: &Env, pool: &PoolState, commitment: &BytesN<32>) -> Result<(), ClmmError> {
+        let current = Self::pool_state_commitment(env, pool);
+        if current != *commitment {
+            return Err(ClmmError::InvalidSequence);
+        }
+        Ok(())
+    }
+
+    fn pool_state_commitment(env: &Env, pool: &PoolState) -> BytesN<32> {
+        let modulus = <BnScalar as Field>::modulus(env);
+        let mut inputs = Vec::new(env);
+        Self::push_field(env, &mut inputs, &Self::field_from_u128(env, pool.pool_id as u128), &modulus);
+        Self::push_field(env, &mut inputs, &Self::address_to_field(env, &pool.asset_0), &modulus);
+        Self::push_field(env, &mut inputs, &Self::address_to_field(env, &pool.asset_1), &modulus);
+        Self::push_field(env, &mut inputs, &Self::field_from_u128(env, pool.sqrt_price), &modulus);
+        Self::push_field(env, &mut inputs, &Self::field_from_u128(env, pool.liquidity), &modulus);
+        Self::push_field(env, &mut inputs, &Self::field_from_u128(env, pool.fee_growth_global_0), &modulus);
+        Self::push_field(env, &mut inputs, &Self::field_from_u128(env, pool.fee_growth_global_1), &modulus);
+        Self::push_field(env, &mut inputs, &Self::field_from_u128(env, pool.sequence as u128), &modulus);
+
+        let out = poseidon2_hash::<4, BnScalar>(env, &inputs);
+        let mut out_arr = [0u8; 32];
+        out.to_be_bytes().copy_into_slice(&mut out_arr);
+        BytesN::from_array(env, &out_arr)
+    }
+
+    fn push_field(env: &Env, inputs: &mut Vec<U256>, field: &BytesN<32>, modulus: &U256) {
+        let bytes = Bytes::from_array(env, &field.to_array());
+        inputs.push_back(U256::from_be_bytes(env, &bytes).rem_euclid(modulus));
+    }
+
+    fn field_from_u128(env: &Env, value: u128) -> BytesN<32> {
+        let mut out = [0u8; 32];
+        out[16..32].copy_from_slice(&value.to_be_bytes());
+        BytesN::from_array(env, &out)
+    }
+
+    fn address_to_field(env: &Env, address: &Address) -> BytesN<32> {
+        let xdr = address.clone().to_xdr(env);
+        let len = xdr.len();
+        let mut raw = [0u8; 32];
+        xdr.slice(len - 32..len).copy_into_slice(&mut raw);
+
+        let modulus = <BnScalar as Field>::modulus(env);
+        let reduced = U256::from_be_bytes(env, &Bytes::from_array(env, &raw)).rem_euclid(&modulus);
+        let mut out = [0u8; 32];
+        reduced.to_be_bytes().copy_into_slice(&mut out);
+        BytesN::from_array(env, &out)
+    }
+
+    fn transfer_to_pool(env: &Env, asset: &Address, owner: &Address, amount: u64) {
+        if amount == 0 {
+            return;
+        }
+        let token = token::Client::new(env, asset);
+        token.transfer(owner, &env.current_contract_address(), &(amount as i128));
+    }
+
+    fn transfer_from_pool(env: &Env, asset: &Address, recipient: &Address, amount: u64) {
+        if amount == 0 {
+            return;
+        }
+        let token = token::Client::new(env, asset);
+        token.transfer(&env.current_contract_address(), recipient, &(amount as i128));
     }
 
     pub fn mint_public(
@@ -476,6 +654,7 @@ impl Clmm {
     ) -> Result<(u64, u64), ClmmError> {
         let s = env.storage().instance();
         let mut pool: PoolState = s.get(&DataKey::Pool(pool_id)).ok_or(ClmmError::PoolNotFound)?;
+        owner.require_auth();
 
         if !validate_tick_range(tick_lower, tick_upper, pool.tick_spacing) {
             return Err(ClmmError::InvalidTickRange);
@@ -484,8 +663,14 @@ impl Clmm {
         if amount == 0 {
             return Err(ClmmError::ZeroLiquidity);
         }
+        if min_amount_0 == 0 && min_amount_1 == 0 {
+            return Err(ClmmError::InvalidAmount);
+        }
 
-        let position_key = DataKey::Position(pool_id, tick_lower, tick_upper);
+        Self::transfer_to_pool(&env, &pool.asset_0, &owner, min_amount_0);
+        Self::transfer_to_pool(&env, &pool.asset_1, &owner, min_amount_1);
+
+        let position_key = DataKey::Position(owner.clone(), pool_id, tick_lower, tick_upper);
         let position: Option<PositionState> = s.get(&position_key);
 
         let new_liquidity = position
@@ -532,12 +717,21 @@ impl Clmm {
         tick_lower: i64,
         tick_upper: i64,
         amount: u128,
+        amount_0: u64,
+        amount_1: u64,
     ) -> Result<(), ClmmError> {
         let s = env.storage().instance();
         let mut pool: PoolState = s.get(&DataKey::Pool(pool_id)).ok_or(ClmmError::PoolNotFound)?;
+        owner.require_auth();
 
-        let position_key = DataKey::Position(pool_id, tick_lower, tick_upper);
+        let position_key = DataKey::Position(owner.clone(), pool_id, tick_lower, tick_upper);
         let position: PositionState = s.get(&position_key).ok_or(ClmmError::PositionNotFound)?;
+        if position.owner != owner {
+            return Err(ClmmError::Unauthorized);
+        }
+        if amount_0 == 0 && amount_1 == 0 {
+            return Err(ClmmError::InvalidAmount);
+        }
 
         if amount > position.liquidity {
             return Err(ClmmError::InsufficientLiquidity);
@@ -567,6 +761,9 @@ impl Clmm {
         pool.sequence += 1;
         s.set(&DataKey::Pool(pool_id), &pool);
 
+        Self::transfer_from_pool(&env, &pool.asset_0, &owner, amount_0);
+        Self::transfer_from_pool(&env, &pool.asset_1, &owner, amount_1);
+
         Ok(())
     }
 
@@ -581,7 +778,7 @@ impl Clmm {
         tick_lower: i64,
         tick_upper: i64,
     ) -> Option<PositionState> {
-        let position = env.storage().instance().get::<_, PositionState>(&DataKey::Position(pool_id, tick_lower, tick_upper))?;
+        let position = env.storage().instance().get::<_, PositionState>(&DataKey::Position(owner.clone(), pool_id, tick_lower, tick_upper))?;
         if position.owner == owner {
             Some(position)
         } else {
@@ -589,13 +786,14 @@ impl Clmm {
         }
     }
 
-    pub fn set_protocol_fee_recipient(env: Env, admin: Address, recipient: Address) {
-        admin.require_auth();
+    pub fn set_protocol_fee_recipient(env: Env, admin: Address, recipient: Address) -> Result<(), ClmmError> {
+        Self::require_admin(&env, &admin)?;
         env.storage().instance().set(&DataKey::ProtocolFeeRecipient, &recipient);
+        Ok(())
     }
 
     pub fn set_protocol_fee_rate(env: Env, admin: Address, fee: u32) -> Result<(), ClmmError> {
-        admin.require_auth();
+        Self::require_admin(&env, &admin)?;
         if fee > 500 {
             return Err(ClmmError::InvalidProtocolFee);
         }
@@ -610,6 +808,13 @@ impl Clmm {
     ) -> Result<(u64, u64), ClmmError> {
         let s = env.storage().instance();
         let mut pool: PoolState = s.get(&DataKey::Pool(pool_id)).ok_or(ClmmError::PoolNotFound)?;
+        let configured_recipient: Address = s
+            .get(&DataKey::ProtocolFeeRecipient)
+            .ok_or(ClmmError::Unauthorized)?;
+        if configured_recipient != recipient {
+            return Err(ClmmError::Unauthorized);
+        }
+        recipient.require_auth();
 
         let amount_0 = pool.protocol_fee_0;
         let amount_1 = pool.protocol_fee_1;
@@ -622,6 +827,9 @@ impl Clmm {
         pool.protocol_fee_1 = 0;
         pool.sequence += 1;
         s.set(&DataKey::Pool(pool_id), &pool);
+
+        Self::transfer_from_pool(&env, &pool.asset_0, &recipient, amount_0);
+        Self::transfer_from_pool(&env, &pool.asset_1, &recipient, amount_1);
 
         ProtocolFeeClaimEvent {
             pool_id,
@@ -641,65 +849,136 @@ impl Clmm {
     
     /// Get pool sequence (operation count)
     pub fn get_pool_sequence(env: Env, pool_id: u32) -> u64 {
-        env.storage().instance().get(&DataKey::PoolSequence(pool_id)).unwrap_or(0)
+        env.storage()
+            .instance()
+            .get::<_, PoolState>(&DataKey::Pool(pool_id))
+            .map(|pool| pool.sequence)
+            .unwrap_or_else(|| env.storage().instance().get(&DataKey::PoolSequence(pool_id)).unwrap_or(0))
     }
     
     /// Get note commitment for an operation
-    pub fn get_note_commitment(env: Env, op_id: u64) -> Option<BytesN<32>> {
-        env.storage().instance().get(&DataKey::NoteCommitment(op_id))
+    pub fn get_note_commitment(env: Env, op_id: u64, index: u32) -> Option<BytesN<32>> {
+        env.storage().instance().get(&DataKey::NoteCommitment(op_id, index))
     }
 }
 
-/// Helper function to parse note commitment from public inputs
-/// Public inputs format: [merkle_root(32), nullifier(32), commitment(32), ...]
-fn parse_commitment_from_inputs(inputs: &Bytes) -> Result<BytesN<32>, ClmmError> {
-    if inputs.len() < 96 {
-        return Err(ClmmError::ProofVerificationFailed);
-    }
-    // Extract commitment (3rd field, offset 64 bytes)
-    let commitment = inputs.slice(64..96);
-    // Convert Bytes to BytesN<32>
+struct MintPublicInputs {
+    merkle_root: BytesN<32>,
+    position_nullifier: BytesN<32>,
+    new_position_commitment: BytesN<32>,
+    pool_state_old: BytesN<32>,
+    input_nullifier: BytesN<32>,
+}
+
+struct SwapPublicInputs {
+    merkle_root: BytesN<32>,
+    input_nullifier: BytesN<32>,
+    output_commitment: BytesN<32>,
+    pool_state_old: BytesN<32>,
+}
+
+struct BurnPublicInputs {
+    merkle_root: BytesN<32>,
+    position_nullifier: BytesN<32>,
+    pool_state_old: BytesN<32>,
+    output_commitment_0: BytesN<32>,
+    output_commitment_1: BytesN<32>,
+}
+
+struct CollectPublicInputs {
+    merkle_root: BytesN<32>,
+    position_nullifier: BytesN<32>,
+    new_position_commitment: BytesN<32>,
+    pool_state_old: BytesN<32>,
+    output_commitment_0: BytesN<32>,
+    output_commitment_1: BytesN<32>,
+}
+
+fn field_at(inputs: &Bytes, index: u32) -> BytesN<32> {
     let mut arr = [0u8; 32];
-    let mut i = 0;
+    let offset = index * 32;
+    let mut i = 0u32;
     while i < 32 {
-        arr[i] = commitment.get(i as u32).unwrap_or(0);
+        arr[i as usize] = inputs.get(offset + i).unwrap_or(0);
         i += 1;
     }
-    Ok(BytesN::from_array(& commitment.env(), &arr))
+    BytesN::from_array(&inputs.env(), &arr)
 }
 
-/// Helper function to parse nullifier from public inputs
-/// Public inputs format: [merkle_root(32), nullifier(32), commitment(32), ...]
-fn parse_nullifier_from_inputs(inputs: &Bytes) -> Result<BytesN<32>, ClmmError> {
-    if inputs.len() < 64 {
-        return Err(ClmmError::ProofVerificationFailed);
-    }
-    // Extract nullifier (2nd field, offset 32 bytes)
-    let mut arr = [0u8; 32];
-    let mut i = 0;
+fn is_zero_bytes(value: &BytesN<32>) -> bool {
+    let mut i = 0u32;
     while i < 32 {
-        arr[i] = inputs.get((32 + i) as u32).unwrap_or(0);
+        if value.get(i).unwrap_or(0) != 0 {
+            return false;
+        }
         i += 1;
     }
-    Ok(BytesN::from_array(& inputs.env(), &arr))
+    true
 }
 
-/// Helper function to parse swap output from public inputs
-fn parse_swap_output_from_inputs(inputs: &Bytes) -> Result<u64, ClmmError> {
-    // For simplicity, return a placeholder
-    // In production, parse from specific field in public inputs
-    if inputs.len() < 32 {
+/// clmm_mint public inputs:
+/// [0] merkle_root, [1] position_nullifier, [2] old_position_commitment,
+/// [3] new_position_commitment, [4] pool_state_old, [5] pool_state_new,
+/// [6] input_note_nullifier
+fn parse_mint_public_inputs(inputs: &Bytes) -> Result<MintPublicInputs, ClmmError> {
+    if inputs.len() != 7 * 32 {
         return Err(ClmmError::ProofVerificationFailed);
     }
-    Ok(0)
+    Ok(MintPublicInputs {
+        merkle_root: field_at(inputs, 0),
+        position_nullifier: field_at(inputs, 1),
+        new_position_commitment: field_at(inputs, 3),
+        pool_state_old: field_at(inputs, 4),
+        input_nullifier: field_at(inputs, 6),
+    })
 }
 
-/// Helper function to parse collect amounts from public inputs
-fn parse_collect_amounts_from_inputs(inputs: &Bytes) -> Result<(u64, u64), ClmmError> {
-    // For simplicity, return placeholders
-    // In production, parse from specific fields in public inputs
-    if inputs.len() < 32 {
+/// clmm_swap_exact_in public inputs:
+/// [0] merkle_root, [1] input_nullifier, [2] output_commitment,
+/// [3] pool_state_old, [4] pool_state_new
+fn parse_swap_public_inputs(inputs: &Bytes) -> Result<SwapPublicInputs, ClmmError> {
+    if inputs.len() != 5 * 32 {
         return Err(ClmmError::ProofVerificationFailed);
     }
-    Ok((0, 0))
+    Ok(SwapPublicInputs {
+        merkle_root: field_at(inputs, 0),
+        input_nullifier: field_at(inputs, 1),
+        output_commitment: field_at(inputs, 2),
+        pool_state_old: field_at(inputs, 3),
+    })
+}
+
+/// clmm_burn public inputs:
+/// [0] merkle_root, [1] position_nullifier, [2] old_position_commitment,
+/// [3] new_position_commitment, [4] pool_state_old, [5] pool_state_new,
+/// [6] output_commitment_0, [7] output_commitment_1
+fn parse_burn_public_inputs(inputs: &Bytes) -> Result<BurnPublicInputs, ClmmError> {
+    if inputs.len() != 8 * 32 {
+        return Err(ClmmError::ProofVerificationFailed);
+    }
+    Ok(BurnPublicInputs {
+        merkle_root: field_at(inputs, 0),
+        position_nullifier: field_at(inputs, 1),
+        pool_state_old: field_at(inputs, 4),
+        output_commitment_0: field_at(inputs, 6),
+        output_commitment_1: field_at(inputs, 7),
+    })
+}
+
+/// clmm_collect public inputs:
+/// [0] merkle_root, [1] position_nullifier, [2] old_position_commitment,
+/// [3] new_position_commitment, [4] pool_state_old,
+/// [5] output_commitment_0, [6] output_commitment_1
+fn parse_collect_public_inputs(inputs: &Bytes) -> Result<CollectPublicInputs, ClmmError> {
+    if inputs.len() != 7 * 32 {
+        return Err(ClmmError::ProofVerificationFailed);
+    }
+    Ok(CollectPublicInputs {
+        merkle_root: field_at(inputs, 0),
+        position_nullifier: field_at(inputs, 1),
+        new_position_commitment: field_at(inputs, 3),
+        pool_state_old: field_at(inputs, 4),
+        output_commitment_0: field_at(inputs, 5),
+        output_commitment_1: field_at(inputs, 6),
+    })
 }

@@ -11,8 +11,9 @@ fn main(
     position_nullifier: pub Field,
     old_position_commitment: pub Field,
     new_position_commitment: pub Field,
-    output_commitment_0: Field,
-    output_commitment_1: Field,
+    pool_state_old: pub Field,
+    output_commitment_0: pub Field,
+    output_commitment_1: pub Field,
     
     // ---- private inputs: position ----
     pool_id: Field,
@@ -27,9 +28,15 @@ fn main(
     position_blinding: Field,
     owner_spending_key: Field,
     owner_owner_key: Field,
+    position_merkle_path: [Field; w::TREE_DEPTH],
+    position_merkle_indices: [Field; w::TREE_DEPTH],
     
     // ---- private inputs: pool state ----
+    pool_asset_0: Field,
+    pool_asset_1: Field,
+    pool_sqrt_price: Field,
     pool_current_tick: Field,
+    pool_liquidity: Field,
     pool_fee_growth_global_0: Field,
     pool_fee_growth_global_1: Field,
     pool_sequence: Field,
@@ -51,6 +58,13 @@ fn main(
     
     let derived_nullifier = clmm::position_nullifier(old_position_commitment, owner_spending_key);
     assert(derived_nullifier == position_nullifier, "position nullifier mismatch");
+
+    let computed_position_root = w::compute_merkle_root(
+        old_position_commitment,
+        position_merkle_path,
+        position_merkle_indices,
+    );
+    assert(computed_position_root == _merkle_root, "position merkle root mismatch");
     
     // Verify owner key
     assert(owner_owner_key == w::owner_key(owner_spending_key), "owner key mismatch");
@@ -123,7 +137,23 @@ fn main(
     assert(computed_new_position == new_position_commitment, "new position commitment mismatch");
     
     // ========================================================================
-    // 7. Pool sequence verification
+    // 7. Verify old pool-state binding
+    // ========================================================================
+
+    let computed_pool_state_old = clmm::pool_state_commitment(
+        pool_id,
+        pool_asset_0,
+        pool_asset_1,
+        pool_sqrt_price,
+        pool_liquidity,
+        pool_fee_growth_global_0,
+        pool_fee_growth_global_1,
+        pool_sequence,
+    );
+    assert(computed_pool_state_old == pool_state_old, "pool state old mismatch");
+    
+    // ========================================================================
+    // 8. Pool sequence verification
     // ========================================================================
     
     clmm::verify_sequence_increment(pool_sequence, pool_sequence + 1);
@@ -151,10 +181,15 @@ fn test_collect_zero_fees() {
         owner_key, nonce, blinding
     );
     let pos_nullifier = clmm::position_nullifier(old_position, sk);
+    let position_root = w::compute_merkle_root(old_position, [0; 20], [0; 20]);
     
     // Pool with zero fee growth (no fees accrued)
     let pool_fee_0: Field = 0;
     let pool_fee_1: Field = 0;
+    let pool_state_old = clmm::pool_state_commitment(
+        1, 0, 1, 281474976710656, 1000000,
+        pool_fee_0, pool_fee_1, 1,
+    );
     
     // Collect zero fees
     let collect_0: Field = 0;
@@ -173,10 +208,11 @@ fn test_collect_zero_fees() {
     );
     
     main(
-        0,
+        position_root,
         pos_nullifier,
         old_position,
         new_position,
+        pool_state_old,
         out_0, out_1,
         
         1, 1000, 2000,
@@ -184,8 +220,11 @@ fn test_collect_zero_fees() {
         0, 0,
         0, 0,
         nonce, blinding, sk, owner_key,
+        [0; 20], [0; 20],
         
+        0, 1, 281474976710656,
         1500,
+        1000000,
         pool_fee_0, pool_fee_1,
         1, 100,
         
@@ -209,25 +248,32 @@ fn test_collect_wrong_nullifier() {
     
     // Wrong nullifier
     let pos_nullifier = clmm::position_nullifier(old_position, wrong_sk);
+    let position_root = w::compute_merkle_root(old_position, [0; 20], [0; 20]);
     
     let new_position = clmm::position_commitment(
         1, 1000, 2000, 100000,
         0, 0, 0, 0, owner_key, 1, 12346
     );
+    let pool_state_old = clmm::pool_state_commitment(
+        1, 0, 1, 281474976710656, 1000000,
+        0, 0, 1,
+    );
     
     main(
-        0,
+        position_root,
         pos_nullifier,
         old_position,
         new_position,
+        pool_state_old,
         w::note_commitment(0, 0, owner_key, 111),
         w::note_commitment(1, 0, owner_key, 222),
         
         1, 1000, 2000, 100000,
         0, 0, 0, 0,
         1, 12345, sk, owner_key,
+        [0; 20], [0; 20],
         
-        1500, 0, 0, 1, 100,
+        0, 1, 281474976710656, 1500, 1000000, 0, 0, 1, 100,
         
         0, 0, owner_key, 111, owner_key, 222, 0, 1,
     );

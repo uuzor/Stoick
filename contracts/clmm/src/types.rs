@@ -17,7 +17,7 @@ pub enum DataKey {
     Admin,
     LastPoolId,
     Pool(u32),
-    Position(u32, i64, i64),  // pool_id, tick_lower, tick_upper
+    Position(Address, u32, i64, i64),  // owner, pool_id, tick_lower, tick_upper
     Tick(u32, i64),
     PoolSequence(u32),
     MintVf,
@@ -49,6 +49,7 @@ pub enum ClmmError {
     ProofVerificationFailed = 15,
     PoolLocked = 16,
     InvalidProtocolFee = 17,
+    UnknownRoot = 18,
 }
 
 /// Pool state
@@ -56,8 +57,8 @@ pub enum ClmmError {
 #[derive(Clone)]
 pub struct PoolState {
     pub pool_id: u32,
-    pub asset_0: u32,
-    pub asset_1: u32,
+    pub asset_0: Address,
+    pub asset_1: Address,
     pub sqrt_price: u128,
     pub liquidity: u128,
     pub current_tick: i64,

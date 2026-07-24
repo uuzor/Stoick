@@ -1,50 +1,44 @@
-# clmm_mint -- valid witness for testing
-# Public inputs (order is load-bearing)
-merkle_root = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-position_nullifier = "0x0000000000000000000000000000000000000000000000000000000000000000"
-old_position_commitment = "0x0000000000000000000000000000000000000000000000000000000000000000"
-new_position_commitment = "0xabcd1234567890abcdef1234567890abcdef1234567890abcdef12345678"
-_pool_state_old = "0x0001000000000000000001000000000000000100000000000000010000000000001"
-_pool_state_new = "0x0001000000000000000001000000000000000100000000000000010000000000002"
-input_nullifier = "0x0000000000000000000000000000000000000000000000000000000000000000"
-_output_note_commitment = "0xdef78901234567890abcdef1234567890abcdef1234567890abcdef123456"
-_slippage_min_commitment = "0x0000000000000000000000000000000000000000000000000000000000000001"
+merkle_root = "0x16a65bbd2d8f27d05dbdfc9096f2becd576760cffcfb00bdf8f38d3f61e0a955"
+position_nullifier = "0x0"
+old_position_commitment = "0x0"
+new_position_commitment = "0x2f4cb62b081d926316d59cb5c3cdf0b05da5bb9d3eca5160dfb2572af77c93e6"
+pool_state_old = "0x0f893ca7ec24a5e969be552d76f3ab8341dc063cb40a71c10a52a9dd2d9411e4"
+_pool_state_new = "0x0"
+input_nullifier = "0x02c32c606efae12d4cdc190202c6e933ec3d2fa3ce312dc8d9934b127a2bd39d"
+_output_note_commitment = "0x0"
+_slippage_min_commitment = "0x0"
 
-# Private inputs: input note
-in_note_asset_id = 0
-in_note_amount = 1000000
-in_note_owner_key = "0x1234567890123456789012345678901234567890123456789012345678901234"
-in_note_spending_key = 7
-in_note_blinding = 12345
-in_note_merkle_path = ["0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0"]
+in_note_asset_id = "0x1217ba5b3920e4eb4d7335e45b2f424a05b34c8cdff840c28fc294184f017c06"
+in_note_amount = "1000000"
+in_note_owner_key = "0x0b0f697117aa52458ddd243aeeac42e2a58175474f8889f3d763521eea2ce64b"
+in_note_spending_key = "7"
+in_note_blinding = "111"
+in_note_merkle_path = ["0x0000000000000000000000000000000000000000000000000000000000000000","0x0b63a53787021a4a962a452c2921b3663aff1ffd8d5510540f8e659e782956f1","0x0e34ac2c09f45a503d2908bcb12f1cbae5fa4065759c88d501c097506a8b2290","0x21f9172d72fdcdafc312eee05cf5092980dda821da5b760a9fb8dbdf607c8a20","0x2373ea368857ec7af97e7b470d705848e2bf93ed7bef142a490f2119bcf82d8e","0x120157cfaaa49ce3da30f8b47879114977c24b266d58b0ac18b325d878aafddf","0x01c28fe1059ae0237b72334700697bdf465e03df03986fe05200cadeda66bd76","0x2d78ed82f93b61ba718b17c2dfe5b52375b4d37cbbed6f1fc98b47614b0cf21b","0x067243231eddf4222f3911defbba7705aff06ed45960b27f6f91319196ef97e1","0x1849b85f3c693693e732dfc4577217acc18295193bede09ce8b97ad910310972","0x2a775ea761d20435b31fa2c33ff07663e24542ffb9e7b293dfce3042eb104686","0x0f320b0703439a8114f81593de99cd0b8f3b9bf854601abb5b2ea0e8a3dda4a7","0x0d07f6e7a8a0e9199d6d92801fff867002ff5b4808962f9da2ba5ce1bdd26a73","0x1c4954081e324939350febc2b918a293ebcdaead01be95ec02fcbe8d2c1635d1","0x0197f2171ef99c2d053ee1fb5ff5ab288d56b9b41b4716c9214a4d97facc4c4a","0x2b9cdd484c5ba1e4d6efcc3f18734b5ac4c4a0b9102e2aeb48521a661d3feee9","0x14f44d672eb357739e42463497f9fdac46623af863eea4d947ca00a497dcdeb3","0x071d7627ae3b2eabda8a810227bf04206370ac78dbf6c372380182dbd3711fe3","0x2fdc08d9fe075ac58cb8c00f98697861a13b3ab6f9d41a4e768f75e477475bf5","0x20165fe405652104dceaeeca92950aa5adc571b8cafe192878cba58ff1be49c5"]
 in_note_merkle_indices = ["0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0"]
 
-# Private inputs: position
-pool_id = 1
-tick_lower = -1000
-tick_upper = 1000
-liquidity_delta = 1000000
-fee_growth_inside_0_last = 0
-fee_growth_inside_1_last = 0
-tokens_owed_0 = 0
-tokens_owed_1 = 0
-position_nonce = 1
-position_blinding = 54321
-owner_spending_key = 7
+pool_id = "1"
+tick_lower = "0"
+tick_upper = "1200"
+liquidity_delta = "100000"
+fee_growth_inside_0_last = "0"
+fee_growth_inside_1_last = "0"
+tokens_owed_0 = "0"
+tokens_owed_1 = "0"
+position_nonce = "1"
+position_blinding = "12345"
+owner_spending_key = "7"
 
-# Private inputs: pool state
-_pool_asset_0 = 0
-_pool_asset_1 = 1
-_pool_sqrt_price = 79228162512
-pool_current_tick = 0
-_pool_liquidity = 1000000
-_pool_fee_growth_global_0 = 0
-_pool_fee_growth_global_1 = 0
-_pool_protocol_fee_0 = 0
-_pool_protocol_fee_1 = 0
-pool_sequence = 0
-pool_tick_spacing = 100
+_pool_asset_0 = "0x1217ba5b3920e4eb4d7335e45b2f424a05b34c8cdff840c28fc294184f017c06"
+_pool_asset_1 = "0x2e994ee60e3edc5a47387af66699b023042638c2f1616a6caaa0874af550e21c"
+_pool_sqrt_price = "79228162512"
+pool_current_tick = "0"
+_pool_liquidity = "1000000000"
+_pool_fee_growth_global_0 = "0"
+_pool_fee_growth_global_1 = "0"
+_pool_protocol_fee_0 = "0"
+_pool_protocol_fee_1 = "0"
+pool_sequence = "1"
+pool_tick_spacing = "100"
 
-# Private inputs: slippage
-_min_token_0 = 0
-_min_token_1 = 0
+_min_token_0 = "0"
+_min_token_1 = "0"

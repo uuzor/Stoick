@@ -8,3 +8,4 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 soroban-sdk = { version = "26.0.0", default-features = false }
+soroban-poseidon = "26.0.0"

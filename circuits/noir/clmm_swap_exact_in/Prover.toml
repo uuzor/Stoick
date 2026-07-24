@@ -1,10 +1,32 @@
-# Prover.toml for clmm_swap_exact_in circuit
+merkle_root = "0x2a886b25ef8d8f662c139a6a60c2e7e693430cf14f16cd7c2cdb3fabbfbf2bd2"
+input_nullifier = "0x0274a504850158a66c346ef3f881001777b85c72b5c68908321d6c69c200928a"
+output_commitment = "0x2d3d68dbf28ebae9519e15b6de90667162825bf10c00ae4daa7f19f42f58cc13"
+pool_state_old = "0x0d346564d5cb96c26cd33f0df91cb0e413d306effc1366a5112b8e759478e2e9"
+_pool_state_new = "0x0"
+min_output_commitment = "49850"
+pool_id = "1"
+tick_count = "1"
+_crossed_ticks_commitment = "1"
 
-[verification_key]
-path = "target/clmm_swap_exact_in.vk"
+in_note_asset_id = "0x1217ba5b3920e4eb4d7335e45b2f424a05b34c8cdff840c28fc294184f017c06"
+in_note_amount = "100000"
+in_note_owner_key = "0x0b0f697117aa52458ddd243aeeac42e2a58175474f8889f3d763521eea2ce64b"
+in_note_spending_key = "7"
+in_note_blinding = "333"
+in_note_merkle_path = ["0x0000000000000000000000000000000000000000000000000000000000000000","0x04348dc65a50eba9760d22d8a16430b339766a01def63d1645efde67a509bf61","0x0e34ac2c09f45a503d2908bcb12f1cbae5fa4065759c88d501c097506a8b2290","0x21f9172d72fdcdafc312eee05cf5092980dda821da5b760a9fb8dbdf607c8a20","0x2373ea368857ec7af97e7b470d705848e2bf93ed7bef142a490f2119bcf82d8e","0x120157cfaaa49ce3da30f8b47879114977c24b266d58b0ac18b325d878aafddf","0x01c28fe1059ae0237b72334700697bdf465e03df03986fe05200cadeda66bd76","0x2d78ed82f93b61ba718b17c2dfe5b52375b4d37cbbed6f1fc98b47614b0cf21b","0x067243231eddf4222f3911defbba7705aff06ed45960b27f6f91319196ef97e1","0x1849b85f3c693693e732dfc4577217acc18295193bede09ce8b97ad910310972","0x2a775ea761d20435b31fa2c33ff07663e24542ffb9e7b293dfce3042eb104686","0x0f320b0703439a8114f81593de99cd0b8f3b9bf854601abb5b2ea0e8a3dda4a7","0x0d07f6e7a8a0e9199d6d92801fff867002ff5b4808962f9da2ba5ce1bdd26a73","0x1c4954081e324939350febc2b918a293ebcdaead01be95ec02fcbe8d2c1635d1","0x0197f2171ef99c2d053ee1fb5ff5ab288d56b9b41b4716c9214a4d97facc4c4a","0x2b9cdd484c5ba1e4d6efcc3f18734b5ac4c4a0b9102e2aeb48521a661d3feee9","0x14f44d672eb357739e42463497f9fdac46623af863eea4d947ca00a497dcdeb3","0x071d7627ae3b2eabda8a810227bf04206370ac78dbf6c372380182dbd3711fe3","0x2fdc08d9fe075ac58cb8c00f98697861a13b3ab6f9d41a4e768f75e477475bf5","0x20165fe405652104dceaeeca92950aa5adc571b8cafe192878cba58ff1be49c5"]
+in_note_merkle_indices = ["0","1","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0"]
 
-[proof]
-path = "target/clmm_swap_exact_in.proof"
+pool_asset_0 = "0x1217ba5b3920e4eb4d7335e45b2f424a05b34c8cdff840c28fc294184f017c06"
+pool_asset_1 = "0x2e994ee60e3edc5a47387af66699b023042638c2f1616a6caaa0874af550e21c"
+pool_sqrt_price_old = "79228162512"
+pool_sqrt_price_new = "79228162513"
+pool_current_tick_old = "0"
+pool_current_tick_new = "0"
+pool_liquidity_old = "1000000000"
+pool_liquidity_new = "1000000000"
+pool_sequence = "2"
+pool_fee = "30"
 
-[public_inputs]
-path = "target/public_inputs"
+zero_for_one = "1"
+swap_amount = "50000"
+expected_output = "49850"
